@@ -1,0 +1,59 @@
+---
+import "../../styles/global.css";
+
+// Obtenemos el usuario y el perfil desde locals (llenados por el middleware)
+const user = await Astro.locals.getUser();
+
+// Consultamos los datos del jugador en la tabla 'players'
+const { data: profile } = await Astro.locals.supabase
+    .from('players')
+    .select('*')
+    .eq('auth_user_id', user?.id)
+    .single();
+---
+
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Dashboard - Carrera del Saber</title>
+</head>
+<body class="bg-zinc-50 text-zinc-900 min-h-screen">
+<!-- Navbar simple -->
+<nav class="bg-white border-b border-zinc-200 p-4 flex justify-between items-center shadow-sm">
+    <h1 class="font-black text-xl tracking-tighter text-unilibre-blue">
+        UNILIBRE <span class="text-unilibre-red font-normal">GAME</span>
+    </h1>
+    <div class="flex items-center gap-4">
+        <span class="text-sm font-medium text-zinc-500">{user?.email}</span>
+        <form action="/api/auth/logout" method="POST">
+            <button type="submit" class="text-xs font-bold text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg border border-red-100 transition-colors">
+                CERRAR SESIÓN
+            </button>
+        </form>
+    </div>
+</nav>
+
+<main class="p-8 max-w-5xl mx-auto">
+    <header class="mb-8">
+        <h2 class="text-3xl font-bold">Bienvenido, {profile?.name || 'Cargando...'}</h2>
+        <p class="text-zinc-500 italic">Rol: {profile?.role || 'Estudiante'}</p>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Tarjeta de Info -->
+        <div class="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+            <p class="text-xs font-bold text-zinc-400 uppercase mb-2">Semestre Actual</p>
+            <p class="text-4xl font-black">{profile?.semester || 'N/A'}</p>
+        </div>
+
+        <!-- Aquí irán los botones del menú que definimos antes -->
+        {profile?.role === 'admin' && (
+                <a href="/dashboard/facultades" class="bg-unilibre-blue text-white p-6 rounded-2xl shadow-lg hover:scale-105 transition-transform flex flex-col justify-end min-h-[150px]">
+                    <p class="font-bold text-xl">Gestionar Facultades</p>
+                    <p class="text-blue-100 text-sm">Crear y editar unidades académicas</p>
+                </a>
+        )}
+    </div>
+</main>
+</body>
+</html>
