@@ -1,96 +1,293 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import FormButton from "../../components/FormButton.astro";
+
+// --- LÓGICA DE PAGINACIÓN ---
+const pageSize = 10;
+const url = new URL(Astro.request.url);
+const page = parseInt(url.searchParams.get('page') || '1');
+const from = (page - 1) * pageSize;
+const to = from + pageSize - 1;
+
+// 1. Obtener materias con sus programas vinculados y conteo total
+const { data: subjects, count, error } = await Astro.locals.supabase
+    .from('subjects')
+    .select(`
+    *,
+    program_subjects (
+      semester,
+      programs (
+        name
+      )
+    )
+  `, { count: 'exact' })
+    .order('name', { ascending: true })
+    .range(from, to);
+
+if (error) {
+    console.error("ERROR DE CONSULTA:", error);
+} else {
+    console.log("MATERIAS CARGADAS:", subjects);
+}
+const totalPages = Math.ceil((count || 0) / pageSize);
+
+// 2. Obtener Facultades y Programas para el Modal
+const { data: faculties } = await Astro.locals.supabase.from('faculties').select('id, name').order('name');
+const { data: allPrograms } = await Astro.locals.supabase.from('programs').select('id, name, faculty_id').order('name');
+---
+
+<DashboardLayout title="Materias">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+        <div>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase">Banco de Materias</h2>
+            <p class="text-slate-500 font-medium">Total: {count} registros encontrados</p>
+        </div>
+        <button id="btn-nueva-materia" class="btn btn-primary text-white font-bold px-8 shadow-lg">
+            <Icon name="lucide:plus" class="w-5 h-5" /> Nueva Materia
+        </button>
+    </div>
+
+    <!-- TABLA PRINCIPAL -->
+    <div class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden mb-6">
+        <div class="overflow-x-auto">
+            <table class="table table-zebra w-full">
+                <thead class="bg-base-200">
+                <tr class="text-[10px] uppercase tracking-widest text-slate-500">
+                    <th class="p-6">Nombre de la Materia</th>
+                    <th class="p-6">Programas / Semestres</th>
+                    <th class="p-6 text-right">Acciones</th>
+                </tr>
+                </thead>
+                <tbody>
+                {subjects?.map((s) => (
+                        <tr class="hover:bg-base-200/50 transition-colors">
+                            <td class="p-6">
+                                <div class="font-bold text-slate-800 text-lg">{s.name}</div>
+                                <div class="text-xs text-slate-400 max-w-xs truncate">{s.description || 'Sin descripción'}</div>
+                            </td>
+                            <td class="p-6">
+                                <div class="flex flex-wrap gap-1">
+                                    {s.program_subjects.map((ps: any) => (
+                                            <div class="badge badge-outline border-primary/30 text-primary font-bold text-[10px] uppercase gap-1 p-3">
+                                                {ps.programs.name} <span class="bg-primary text-white px-1.5 rounded-md">{ps.semester}°</span>
+                                            </div>
+                                    ))}
+                                </div>
+                            </td>
+                            <td class="p-6 text-right">
+                                <div class="flex justify-end gap-2">
+                                    <button class="btn btn-ghost btn-sm text-primary btn-edit"
+                                            data-id={s.id} data-name={s.name} data-desc={s.description || ''}
+                                            data-links={JSON.stringify(s.program_subjects)}>
+                                        <Icon name="lucide:pencil" class="w-4 h-4" />
+                                    </button>
+                                    <button class="btn btn-ghost btn-sm text-error btn-delete" data-id={s.id} data-name={s.name}>
+                                        <Icon name="lucide:trash-2" class="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                ))}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- PAGINACIÓN -->
+        <div class="p-4 bg-base-100 border-t border-base-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <span class="text-xs font-bold text-slate-400 uppercase">Página {page} de {totalPages}</span>
+            <div class="join">
+                <a href={`?page=${page - 1}`} class:list={["join-item btn btn-sm", page <= 1 && "btn-disabled"]}>« Anterior</a>
+                <button class="join-item btn btn-sm btn-active">{page}</button>
+                <a href={`?page=${page + 1}`} class:list={["join-item btn btn-sm", page >= totalPages && "btn-disabled"]}>Siguiente »</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL MULTI-PROGRAMA -->
+    <dialog id="modal_subject" class="modal">
+        <div class="modal-box max-w-4xl border border-base-300 p-0 overflow-visible bg-base-100">
+            <div class="bg-primary p-6 text-white flex justify-between items-center">
+                <div>
+                    <h3 id="modal_title" class="font-black text-2xl italic uppercase tracking-tighter">Gestionar Materia</h3>
+                    <p class="text-blue-100 text-[10px] uppercase font-bold opacity-70">Define la asignatura y sus semestres correspondientes</p>
+                </div>
+                <button class="btn btn-sm btn-circle btn-ghost" onclick="modal_subject.close()">✕</button>
+            </div>
+
+            <form method="POST" action={actions.saveSubject} id="form-subject" class="p-8 space-y-8">
+                <input type="hidden" name="id" id="f_id" />
+                <input type="hidden" name="program_links" id="f_program_links" />
+
+                <!-- SECCIÓN 1: DATOS BÁSICOS -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Nombre de la Materia</span></label>
+                        <input id="f_name" name="name" type="text" required class="input input-bordered w-full font-bold" placeholder="Cálculo Diferencial..." />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Descripción</span></label>
+                        <input id="f_desc" name="description" type="text" class="input input-bordered w-full" placeholder="Opcional..." />
+                    </div>
+                </div>
+
+                <!-- SECCIÓN 2: VÍNCULOS DINÁMICOS -->
+                <div class="space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-base-300 pb-2 gap-2">
+                        <span class="font-black text-sm italic text-primary uppercase">Asignar a Programas Académicos</span>
+                        <select id="faculty_filter" class="select select-bordered select-sm font-bold text-xs">
+                            <option value="">Filtrar por Facultad...</option>
+                            {faculties?.map(f => <option value={f.id}>{f.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div id="programs_grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {allPrograms?.map((p) => (
+                                <div class="program-item hidden border border-base-300 rounded-xl p-3 flex items-center justify-between bg-base-200/50 hover:bg-white transition-all shadow-sm" data-faculty-id={p.faculty_id}>
+                                    <div class="flex items-center gap-3">
+                                        <input type="checkbox" class="checkbox checkbox-primary checkbox-sm prog-check" data-prog-id={p.id} />
+                                        <span class="text-[11px] font-bold leading-tight text-slate-700">{p.name}</span>
+                                    </div>
+                                    <div class="flex items-center gap-1 bg-white p-1 rounded-lg border border-base-300">
+                                        <span class="text-[9px] font-black opacity-30">SEM</span>
+                                        <input type="number" min="1" max="12" value="1" class="input input-ghost input-xs w-8 p-0 text-center font-black text-primary prog-semester" />
+                                    </div>
+                                </div>
+                        ))}
+                    </div>
+
+                    <div id="no_faculty_msg" class="text-center py-12 bg-base-200 rounded-2xl border-2 border-dashed border-base-300 text-slate-400 text-sm italic">
+                        <Icon name="lucide:search" class="w-8 h-8 mx-auto mb-2 opacity-20" />
+                        Selecciona una facultad arriba para vincular programas.
+                    </div>
+                </div>
+
+                <div class="modal-action border-t border-base-300 pt-6 flex gap-3">
+                    <button type="button" onclick="modal_subject.close()" class="btn btn-ghost px-8">Cancelar</button>
+                    <FormButton class="btn-primary text-white flex-1 font-black uppercase italic tracking-widest shadow-lg">
+                        Guardar Registro
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <DeleteModal id="modal_delete" action={actions.deleteSubject} />
+</DashboardLayout>
+
 <script>
     const modal = document.getElementById('modal_subject') as any;
     const form = document.getElementById('form-subject') as HTMLFormElement;
     const facultyFilter = document.getElementById('faculty_filter') as HTMLSelectElement;
 
-    // 1. FILTRADO DE PROGRAMAS POR FACULTAD
-    facultyFilter.addEventListener('change', () => {
-        const facultyId = facultyFilter.value;
-        document.querySelectorAll('.program-item').forEach((item: any) => {
-            if (item.dataset.facultyId === facultyId) item.classList.remove('hidden');
-            else item.classList.add('hidden');
-        });
-        document.getElementById('no_faculty_msg')?.classList.add('hidden');
-    });
-
-    // 2. VALIDACIÓN Y PREPARACIÓN DE DATOS ANTES DE ENVIAR
+    // --- 1. VALIDACIÓN AL ENVIAR ---
     form.addEventListener('submit', (e) => {
-        const checkedPrograms = document.querySelectorAll('.prog-check:checked');
+        const checkedOnes = document.querySelectorAll('.prog-check:checked');
 
-        // Validación: Al menos un programa seleccionado
-        if (checkedPrograms.length === 0) {
+        if (checkedOnes.length === 0) {
             e.preventDefault();
-            alert("⚠️ ERROR: Debes seleccionar por lo menos un programa académico.");
-            // Detenemos el spinner si lo tienes en el Layout
-            const btn = form.querySelector('button[type="submit"]');
-            btn?.removeAttribute('disabled');
-            btn?.classList.remove('is-loading');
+            e.stopImmediatePropagation(); // Detiene el script del Layout
+            alert("⚠️ Error: Debes seleccionar al menos un programa académico.");
+
+            // Usamos la función global que creamos en el Layout
+            if (typeof (window as any).unlockSubmitButtons === 'function') {
+                (window as any).unlockSubmitButtons();
+            }
             return;
         }
 
         const links: any[] = [];
-        checkedPrograms.forEach((check: any) => {
+        checkedOnes.forEach((check: any) => {
             const container = check.closest('.program-item');
             const semesterInput = container.querySelector('.prog-semester') as HTMLInputElement;
-
             links.push({
                 program_id: check.getAttribute('data-prog-id'),
                 semester: semesterInput.value || 1
             });
         });
 
-        // Guardamos el JSON en el campo oculto antes de que viaje al servidor
         (document.getElementById('f_program_links') as HTMLInputElement).value = JSON.stringify(links);
     });
 
-    // 3. LÓGICA DE BOTÓN NUEVA MATERIA
-    document.getElementById('btn-nueva-materia')?.addEventListener('click', () => {
-        form.reset();
-        (document.getElementById('f_id') as HTMLInputElement).value = '';
-        (document.getElementById('modal_title') as HTMLElement).innerText = 'NUEVA MATERIA';
-        document.querySelectorAll('.prog-check').forEach((c: any) => c.checked = false);
-        modal.showModal();
-    });
-
-    // 4. LÓGICA DE BOTÓN EDITAR
+    // --- 2. LÓGICA DE EDICIÓN ---
     document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', () => {
+            // A) Limpiar todo antes de empezar
             form.reset();
+            facultyFilter.value = "";
+            document.querySelectorAll('.program-item').forEach(i => i.classList.add('hidden'));
+            document.getElementById('no_faculty_msg')?.classList.remove('hidden');
+
+            // B) Cargar datos básicos
             const id = btn.getAttribute('data-id');
             const name = btn.getAttribute('data-name');
             const desc = btn.getAttribute('data-desc');
-            const links = JSON.parse(btn.getAttribute('data-links') || '[]');
+            const linksRaw = btn.getAttribute('data-links');
+            const links = JSON.parse(linksRaw || '[]');
 
             (document.getElementById('f_id') as HTMLInputElement).value = id || '';
             (document.getElementById('f_name') as HTMLInputElement).value = name || '';
             (document.getElementById('f_desc') as HTMLInputElement).value = desc || '';
 
-            // Resetear todos los checks primero
-            document.querySelectorAll('.prog-check').forEach((c: any) => (c.checked = false));
+            // C) Marcar y MOSTRAR programas vinculados
+            if (links.length > 0) {
+                document.getElementById('no_faculty_msg')?.classList.add('hidden');
 
-            // Marcar solo los que vienen de la DB
-            links.forEach((l: any) => {
-                const check = document.querySelector(`.prog-check[data-prog-id="${l.program_id}"]`) as HTMLInputElement;
-                if(check) {
-                    check.checked = true;
-                    const semInput = check.closest('.program-item')?.querySelector('.prog-semester') as HTMLInputElement;
-                    if(semInput) semInput.value = l.semester;
-                }
-            });
+                links.forEach((l: any) => {
+                    // Buscamos el checkbox por el ID del programa
+                    const check = document.querySelector(`.prog-check[data-prog-id="${l.program_id}"]`) as HTMLInputElement;
+                    if (check) {
+                        check.checked = true;
+                        const container = check.closest('.program-item') as HTMLElement;
+                        container.classList.remove('hidden'); // Forzamos visibilidad
 
-            (document.getElementById('modal_title') as HTMLElement).innerText = 'EDITAR MATERIA';
+                        const semInput = container.querySelector('.prog-semester') as HTMLInputElement;
+                        if (semInput) {
+                            semInput.value = l.semester;
+                            semInput.disabled = false; // Aseguramos que sea editable
+                        }
+                    }
+                });
+            }
+
+            document.getElementById('modal_title')!.innerText = 'EDITAR MATERIA';
             modal.showModal();
         });
     });
 
-    // 5. LÓGICA ELIMINAR (Igual que antes)
-    document.querySelectorAll('.btn-delete').forEach(btn => {
-        btn.addEventListener('click', () => {
-            const id = btn.getAttribute('data-id');
-            const name = btn.getAttribute('data-name');
-            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
-            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar la materia <strong>${name}</strong>?`;
-            (document.getElementById('modal_delete') as any).showModal();
+    // --- 3. FILTRADO POR FACULTAD ---
+    facultyFilter.addEventListener('change', () => {
+        const selectedId = facultyFilter.value;
+        const items = document.querySelectorAll('.program-item');
+        let visibles = 0;
+
+        items.forEach((item: any) => {
+            const isRelatedToFaculty = item.dataset.facultyId === selectedId;
+            const isChecked = item.querySelector('.prog-check').checked;
+
+            // Se muestra si es de la facultad seleccionada O si el usuario ya lo marcó
+            if (isRelatedToFaculty || isChecked) {
+                item.classList.remove('hidden');
+                visibles++;
+            } else {
+                item.classList.add('hidden');
+            }
         });
+
+        document.getElementById('no_faculty_msg')?.classList.toggle('hidden', visibles > 0);
+    });
+
+    // --- 4. BOTÓN NUEVO ---
+    document.getElementById('btn-nueva-materia')?.addEventListener('click', () => {
+        form.reset();
+        (document.getElementById('f_id') as HTMLInputElement).value = '';
+        document.querySelectorAll('.prog-check').forEach((c: any) => c.checked = false);
+        document.querySelectorAll('.program-item').forEach(i => i.classList.add('hidden'));
+        document.getElementById('no_faculty_msg')?.classList.remove('hidden');
+        facultyFilter.value = "";
+        document.getElementById('modal_title')!.innerText = 'NUEVA MATERIA';
+        modal.showModal();
     });
 </script>
