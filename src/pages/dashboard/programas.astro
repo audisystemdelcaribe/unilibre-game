@@ -1,0 +1,164 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import FormButton from "@/components/FormButton.astro";
+
+// 1. Obtener Programas con el nombre de su facultad (JOIN)
+const { data: programs } = await Astro.locals.supabase
+  .from('programs')
+  .select('*, faculties(name)')
+  .order('name', { ascending: true });
+
+// 2. Obtener todas las Facultades para el Select del modal
+const { data: faculties } = await Astro.locals.supabase
+  .from('faculties')
+  .select('id, name')
+  .order('name', { ascending: true });
+---
+
+<DashboardLayout title="Programas Académicos">
+    <div class="flex justify-between items-center mb-10">
+        <div>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase">Programas</h2>
+            <p class="text-slate-500 font-medium">Carreras vinculadas a facultades</p>
+        </div>
+        <button
+            id="btn-nuevo-programa"
+            class="btn btn-primary text-white font-bold px-8 shadow-lg"
+        >
+            + Nuevo Programa
+        </button>
+    </div>
+
+    <!-- TABLA DE PROGRAMAS -->
+    <div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="table table-zebra w-full">
+                <thead class="bg-base-200">
+                    <tr class="text-slate-500 uppercase text-[10px] tracking-widest">
+                        <th>Nombre del Programa</th>
+                        <th>Facultad</th>
+                        <th>Descripción</th>
+                        <th class="text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {programs?.map((p) => (
+                        <tr class="hover:bg-base-200/50 transition-colors">
+                            <td class="font-bold text-slate-700">{p.name}</td>
+                            <td>
+                                <span class="badge badge-outline border-primary text-primary font-bold text-[10px] uppercase">
+                                    {p.faculties?.name || 'S/F'}
+                                </span>
+                            </td>
+                            <td class="text-sm text-slate-500 italic">{p.description || '---'}</td>
+                            <td class="text-right flex justify-end gap-2">
+                                <button
+                                    class="btn btn-ghost btn-sm text-primary btn-edit"
+                                    data-id={p.id}
+                                    data-name={p.name}
+                                    data-desc={p.description || ''}
+                                    data-faculty={p.faculty_id}
+                                >
+                                    <Icon name="lucide:pencil" class="w-4 h-4" />
+                                </button>
+                                <button
+                                    class="btn btn-ghost btn-sm text-error btn-delete"
+                                    data-id={p.id}
+                                    data-name={p.name}
+                                >
+                                    <Icon name="lucide:trash-2" class="w-4 h-4" />
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- MODAL PARA GUARDAR (Crear/Editar) -->
+    <dialog id="modal_save" class="modal">
+        <div class="modal-box border border-base-300 max-w-md">
+            <h3 id="save-title" class="font-black text-2xl italic mb-6 text-primary">NUEVO PROGRAMA</h3>
+            <form method="POST" action={actions.saveProgram} id="form-save" class="space-y-4">
+                <input type="hidden" name="id" id="input-id" />
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold uppercase text-[10px]">Nombre del Programa</span></label>
+                    <input name="name" id="input-name" type="text" required class="input input-bordered w-full bg-base-200" placeholder="Ej: Ingeniería de Sistemas" />
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold uppercase text-[10px]">Pertenece a la Facultad</span></label>
+                    <select name="faculty_id" id="input-faculty" required class="select select-bordered w-full bg-base-200">
+                        <option value="" disabled selected>Selecciona una facultad...</option>
+                        {faculties?.map((f) => (
+                            <option value={f.id}>{f.name}</option>
+                        ))}
+                    </select>
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold uppercase text-[10px]">Descripción (Opcional)</span></label>
+                    <textarea name="description" id="input-desc" class="textarea textarea-bordered h-24 bg-base-200"></textarea>
+                </div>
+
+                <div class="modal-action flex gap-2">
+                    <button type="button" onclick="modal_save.close()" class="btn btn-ghost">Cancelar</button>
+                    <FormButton class="btn-primary text-white flex-1 font-bold">
+                        Guardar Programa
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- ELIMINAR REUTILIZABLE -->
+    <DeleteModal id="modal_delete" action={actions.deleteProgram} />
+
+</DashboardLayout>
+
+<script>
+    // CREAR
+    document.getElementById('btn-nuevo-programa')?.addEventListener('click', () => {
+        const form = document.getElementById('form-save') as HTMLFormElement;
+        form.reset();
+        (document.getElementById('input-id') as HTMLInputElement).value = '';
+        (document.getElementById('save-title') as HTMLElement).innerText = 'NUEVO PROGRAMA';
+        (document.getElementById('modal_save') as any).showModal();
+    });
+
+    // EDITAR
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            const desc = btn.getAttribute('data-desc');
+            const facultyId = btn.getAttribute('data-faculty');
+
+            (document.getElementById('input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('input-name') as HTMLInputElement).value = name || '';
+            (document.getElementById('input-desc') as HTMLTextAreaElement).value = desc || '';
+            (document.getElementById('input-faculty') as HTMLSelectElement).value = facultyId || '';
+
+            (document.getElementById('save-title') as HTMLElement).innerText = 'EDITAR PROGRAMA';
+            (document.getElementById('modal_save') as any).showModal();
+        });
+    });
+
+    // ELIMINAR
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML =
+                `¿Estás seguro de eliminar el programa <strong>${name}</strong>?`;
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+</script>

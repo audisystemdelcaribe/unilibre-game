@@ -21,10 +21,27 @@ const role = profile?.role || 'player';
 // 2. Opciones del menú
 const menuOptions = [
     { name: 'Inicio', href: '/dashboard', icon: 'layout-dashboard', roles: ['admin', 'docente', 'player'] },
+    // --- SECCIÓN: INFRAESTRUCTURA (Solo Admin) ---
     { name: 'Facultades', href: '/dashboard/facultades', icon: 'building-2', roles: ['admin'] },
     { name: 'Programas', href: '/dashboard/programas', icon: 'graduation-cap', roles: ['admin'] },
-    { name: 'Preguntas', href: '/dashboard/preguntas', icon: 'circle-help', roles: ['admin', 'docente'] },
-    { name: 'Eventos', href: '/dashboard/eventos', icon: 'gamepad-2', roles: ['admin', 'docente'] },
+    { name: 'Materias', href: '/dashboard/materias', icon: 'book-open', roles: ['admin'] },
+    { name: 'Temporadas', href: '/dashboard/temporadas', icon: 'calendar-days', roles: ['admin'] },
+
+    // --- SECCIÓN: MOTOR DEL JUEGO (Solo Admin) ---
+    { name: 'Niveles de Dinero', href: '/dashboard/niveles', icon: 'list-ordered', roles: ['admin'] },
+    { name: 'Comodines', href: '/dashboard/comodines', icon: 'heart-pulse', roles: ['admin'] },
+    { name: 'Modos de Juego', href: '/dashboard/modos', icon: 'settings-2', roles: ['admin'] },
+
+    // --- SECCIÓN: CONTENIDO (Admin y Docente) ---
+    { name: 'Banco de Preguntas', href: '/dashboard/preguntas', icon: 'circle-help', roles: ['admin', 'docente'] },
+    { name: 'Mente más Rápida', href: '/dashboard/mente-rapida', icon: 'zap', roles: ['admin', 'docente'] },
+
+    // --- SECCIÓN: EJECUCIÓN (Admin y Docente) ---
+    { name: 'Eventos / Salones', href: '/dashboard/eventos', icon: 'gamepad-2', roles: ['admin', 'docente'] },
+    { name: 'Usuarios y Roles', href: '/dashboard/usuarios', icon: 'users', roles: ['admin'] },
+
+    // --- SECCIÓN: ESTUDIANTE ---
+    { name: '¡A Jugar!', href: '/play', icon: 'rocket', roles: ['player'] },
 ];
 
 const filteredMenu = menuOptions.filter(opt => opt.roles.includes(role));
@@ -94,5 +111,23 @@ const filteredMenu = menuOptions.filter(opt => opt.roles.includes(role));
         <slot />
     </div>
 </main>
+
+<script>
+    // Escuchamos el evento 'submit' en todo el documento
+    document.addEventListener('submit', (e) => {
+        const form = e.target as HTMLFormElement;
+
+        // Buscamos el botón de tipo submit dentro del formulario que se está enviando
+        const btn = form.querySelector('button[type="submit"]');
+
+        if (btn && form.checkValidity()) {
+            // 1. Desactivamos el botón para evitar que el usuario haga clic varias veces
+            btn.setAttribute('disabled', 'true');
+
+            // 2. Agregamos la clase que activa el CSS que escribimos arriba
+            btn.classList.add('is-loading');
+        }
+    });
+</script>
 </body>
 </html>

@@ -1,0 +1,40 @@
+---
+// src/components/FormButton.astro
+import Spinner from './Spinner.astro';
+
+interface Props {
+    type?: "submit" | "button";
+    class?: string;
+    id?: string;
+}
+
+const { type = "submit", class: className, id } = Astro.props;
+---
+
+<button
+        type={type}
+        id={id}
+        class:list={["btn group relative disabled:btn-disabled disabled:opacity-70", className]}
+>
+    <!-- Contenedor del contenido original -->
+    <span class="flex items-center gap-2 btn-content-wrapper transition-all duration-200">
+    <slot />
+  </span>
+
+    <!-- Contenedor del Spinner (invisible por defecto) -->
+    <div class="absolute inset-0 flex items-center justify-center opacity-0 pointer-events-none spinner-wrapper transition-all duration-200">
+        <Spinner size="loading-sm" />
+    </div>
+</button>
+
+<style>
+    /* Cuando el botón tiene la clase 'is-loading', ocultamos el texto y mostramos el spinner */
+    button.is-loading .btn-content-wrapper {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+
+    button.is-loading .spinner-wrapper {
+        opacity: 1;
+    }
+</style>

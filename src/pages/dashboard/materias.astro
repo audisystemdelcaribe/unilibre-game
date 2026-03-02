@@ -1,0 +1,96 @@
+<script>
+    const modal = document.getElementById('modal_subject') as any;
+    const form = document.getElementById('form-subject') as HTMLFormElement;
+    const facultyFilter = document.getElementById('faculty_filter') as HTMLSelectElement;
+
+    // 1. FILTRADO DE PROGRAMAS POR FACULTAD
+    facultyFilter.addEventListener('change', () => {
+        const facultyId = facultyFilter.value;
+        document.querySelectorAll('.program-item').forEach((item: any) => {
+            if (item.dataset.facultyId === facultyId) item.classList.remove('hidden');
+            else item.classList.add('hidden');
+        });
+        document.getElementById('no_faculty_msg')?.classList.add('hidden');
+    });
+
+    // 2. VALIDACIÓN Y PREPARACIÓN DE DATOS ANTES DE ENVIAR
+    form.addEventListener('submit', (e) => {
+        const checkedPrograms = document.querySelectorAll('.prog-check:checked');
+
+        // Validación: Al menos un programa seleccionado
+        if (checkedPrograms.length === 0) {
+            e.preventDefault();
+            alert("⚠️ ERROR: Debes seleccionar por lo menos un programa académico.");
+            // Detenemos el spinner si lo tienes en el Layout
+            const btn = form.querySelector('button[type="submit"]');
+            btn?.removeAttribute('disabled');
+            btn?.classList.remove('is-loading');
+            return;
+        }
+
+        const links: any[] = [];
+        checkedPrograms.forEach((check: any) => {
+            const container = check.closest('.program-item');
+            const semesterInput = container.querySelector('.prog-semester') as HTMLInputElement;
+
+            links.push({
+                program_id: check.getAttribute('data-prog-id'),
+                semester: semesterInput.value || 1
+            });
+        });
+
+        // Guardamos el JSON en el campo oculto antes de que viaje al servidor
+        (document.getElementById('f_program_links') as HTMLInputElement).value = JSON.stringify(links);
+    });
+
+    // 3. LÓGICA DE BOTÓN NUEVA MATERIA
+    document.getElementById('btn-nueva-materia')?.addEventListener('click', () => {
+        form.reset();
+        (document.getElementById('f_id') as HTMLInputElement).value = '';
+        (document.getElementById('modal_title') as HTMLElement).innerText = 'NUEVA MATERIA';
+        document.querySelectorAll('.prog-check').forEach((c: any) => c.checked = false);
+        modal.showModal();
+    });
+
+    // 4. LÓGICA DE BOTÓN EDITAR
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            form.reset();
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            const desc = btn.getAttribute('data-desc');
+            const links = JSON.parse(btn.getAttribute('data-links') || '[]');
+
+            (document.getElementById('f_id') as HTMLInputElement).value = id || '';
+            (document.getElementById('f_name') as HTMLInputElement).value = name || '';
+            (document.getElementById('f_desc') as HTMLInputElement).value = desc || '';
+
+            // Resetear todos los checks primero
+            document.querySelectorAll('.prog-check').forEach((c: any) => (c.checked = false));
+
+            // Marcar solo los que vienen de la DB
+            links.forEach((l: any) => {
+                const check = document.querySelector(`.prog-check[data-prog-id="${l.program_id}"]`) as HTMLInputElement;
+                if(check) {
+                    check.checked = true;
+                    const semInput = check.closest('.program-item')?.querySelector('.prog-semester') as HTMLInputElement;
+                    if(semInput) semInput.value = l.semester;
+                }
+            });
+
+            (document.getElementById('modal_title') as HTMLElement).innerText = 'EDITAR MATERIA';
+            modal.showModal();
+        });
+    });
+
+    // 5. LÓGICA ELIMINAR (Igual que antes)
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar la materia <strong>${name}</strong>?`;
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+</script>
