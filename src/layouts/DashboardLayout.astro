@@ -1,0 +1,89 @@
+---
+// src/layouts/DashboardLayout.astro
+import "../styles/global.css";
+import {
+    LayoutDashboard,
+    Building2,
+    GraduationCap,
+    CircleHelp,
+    Gamepad2,
+    LogOut,
+    Trophy
+} from 'lucide-svelte';
+
+interface Props {
+    title: string;
+}
+
+const { title } = Astro.props;
+const user = await Astro.locals.getUser();
+const { data: profile } = await Astro.locals.supabase
+    .from('players')
+    .select('*')
+    .eq('auth_user_id', user?.id)
+    .single();
+
+const role = profile?.role || 'player';
+
+// Mapeo de iconos para poder iterar (Lucide en Astro se usa como componente)
+const menuOptions = [
+    { name: 'Inicio', href: '/dashboard', icon: LayoutDashboard, roles: ['admin', 'docente', 'player'] },
+    { name: 'Facultades', href: '/dashboard/facultades', icon: Building2, roles: ['admin'] },
+    { name: 'Programas', href: '/dashboard/programas', icon: GraduationCap, roles: ['admin'] },
+    { name: 'Preguntas', href: '/dashboard/preguntas', icon: CircleHelp, roles: ['admin', 'docente'] },
+    { name: 'Eventos', href: '/dashboard/eventos', icon: Gamepad2, roles: ['admin', 'docente'] },
+];
+
+const filteredMenu = menuOptions.filter(opt => opt.roles.includes(role));
+---
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title} | Unilibre Game</title>
+</head>
+<body class="bg-zinc-50 text-zinc-900 flex min-h-screen overflow-hidden">
+<!-- SIDEBAR -->
+<aside class="w-64 bg-zinc-950 text-zinc-400 flex flex-col border-r border-zinc-800 shrink-0">
+    <div class="p-6">
+        <div class="flex items-center gap-2 text-white font-black text-xl tracking-tighter italic mb-1">
+            <Trophy class="text-red-600" size={24} />
+            <span>UNILIBRE <span class="text-red-600 font-normal">GAME</span></span>
+        </div>
+        <p class="text-[10px] uppercase font-black tracking-[0.2em] text-zinc-600">Control Panel</p>
+    </div>
+
+    <nav class="flex-1 px-4 space-y-1">
+        {filteredMenu.map((item) => (
+                <a href={item.href} class="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-zinc-900 hover:text-white transition-all group">
+                    <item.icon size={18} class="group-hover:text-red-500 transition-colors" />
+                    <span class="text-sm font-medium">{item.name}</span>
+                </a>
+        ))}
+    </nav>
+
+    <div class="p-4 border-t border-zinc-900 bg-zinc-950/50">
+        <div class="flex items-center gap-3 px-3 py-3 mb-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
+            <div class="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center text-white font-bold text-xs">
+                {profile?.name?.charAt(0)}
+            </div>
+            <div class="overflow-hidden">
+                <p class="text-xs text-zinc-200 font-bold truncate">{profile?.name}</p>
+                <p class="text-[10px] text-zinc-500 truncate capitalize">{role}</p>
+            </div>
+        </div>
+        <form action="/api/auth/logout" method="POST">
+            <button type="submit" class="w-full flex items-center gap-3 px-3 py-2 text-sm text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all">
+                <LogOut size={18} />
+                <span>Cerrar Sesión</span>
+            </button>
+        </form>
+    </div>
+</aside>
+
+<main class="flex-1 flex flex-col h-screen overflow-y-auto relative p-5">
+    <slot />
+</main>
+</body>
+</html>

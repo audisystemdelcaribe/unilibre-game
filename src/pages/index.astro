@@ -1,17 +1,83 @@
 ---
+import "../styles/global.css";
 
+let errorMessage = "";
+
+// Lógica de servidor para procesar el formulario
+if (Astro.request.method === "POST") {
+	try {
+		const formData = await Astro.request.formData();
+		const email = formData.get("email")?.toString();
+		const password = formData.get("password")?.toString();
+
+		if (email && password) {
+			const { error } = await Astro.locals.supabase.auth.signInWithPassword({
+				email,
+				password,
+			});
+
+			if (error) {
+				errorMessage = "Correo o contraseña incorrectos";
+			} else {
+				return Astro.redirect("/dashboard");
+			}
+		}
+	} catch (e) {
+		errorMessage = "Error al conectar con el servidor";
+	}
+}
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
+<html lang="es">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width" />
+	<title>Login - La Carrera del Saber</title>
+</head>
+<body class="bg-zinc-950 text-white flex min-h-screen items-center justify-center p-4">
+<div class="w-full max-w-sm">
+	<div class="text-center mb-8">
+		<h1 class="text-5xl font-black italic tracking-tighter text-unilibre-blue">
+			UNILIBRE <span class="text-unilibre-red font-normal">GAME</span>
+		</h1>
+		<p class="text-zinc-500 text-sm mt-2 font-medium uppercase tracking-widest">La carrera del saber</p>
+	</div>
+
+	<form method="POST" class="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-2xl space-y-5">
+		{errorMessage && (
+			<div class="bg-red-500/10 border border-red-500 text-red-500 text-xs p-3 rounded-lg font-bold text-center">
+				{errorMessage}
+			</div>
+		)}
+
+		<div class="space-y-2">
+			<label class="text-xs font-bold text-zinc-400 uppercase">Correo Institucional</label>
+			<input
+				name="email"
+				type="email"
+				required
+				class="w-full bg-zinc-800 border-none rounded-xl p-3 focus:ring-2 focus:ring-unilibre-blue outline-none transition-all"
+				placeholder="usuario@unilibre.edu.co"
+			/>
+		</div>
+
+		<div class="space-y-2">
+			<label class="text-xs font-bold text-zinc-400 uppercase">Contraseña</label>
+			<input
+				name="password"
+				type="password"
+				required
+				class="w-full bg-zinc-800 border-none rounded-xl p-3 focus:ring-2 focus:ring-unilibre-blue outline-none transition-all"
+			/>
+		</div>
+
+		<button
+			type="submit"
+			class="w-full bg-unilibre-blue hover:bg-blue-600 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95"
+		>
+			INICIAR SESIÓN
+		</button>
+	</form>
+</div>
+</body>
 </html>
