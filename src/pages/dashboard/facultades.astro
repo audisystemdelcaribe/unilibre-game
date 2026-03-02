@@ -1,79 +1,147 @@
 ---
+// src/pages/dashboard/facultades.astro
 import DashboardLayout from "../../layouts/DashboardLayout.astro";
-import FacultyModal from "../../components/FacultyModal.svelte";
-import DeleteFacultyDialog from "../../components/DeleteFacultyDialog.svelte";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import Spinner from "../../components/Spinner.astro";
 
-// Obtenemos los datos desde Supabase
-const user = await Astro.locals.getUser();
-const { data: faculties, error } = await Astro.locals.supabase
+const { data: faculties } = await Astro.locals.supabase
     .from('faculties')
     .select('*')
     .order('name', { ascending: true });
-
-if (error) {
-    console.error("Error cargando facultades:", error);
-}
 ---
 
 <DashboardLayout title="Facultades">
-    <div class="flex justify-between items-end mb-10">
+    <div class="flex justify-between items-center mb-10">
         <div>
-            <h2 class="text-4xl font-black tracking-tighter uppercase italic">Facultades</h2>
-            <p class="text-zinc-500 font-medium">Estructura base de la universidad</p>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase">Facultades</h2>
         </div>
-        <!-- El Modal de Svelte interactivo para crear -->
-        <FacultyModal client:load />
+        <button
+                id="btn-nueva-facultad"
+                class="btn btn-primary text-white font-bold px-8 shadow-lg"
+        >
+            + Nueva Facultad
+        </button>
     </div>
 
-    <!-- Usamos HTML estándar para la tabla para evitar errores de scope en Astro -->
-    <div class="bg-white border border-zinc-200 rounded-3xl overflow-hidden shadow-sm">
-        <table class="w-full text-left border-collapse">
-            <thead class="bg-zinc-50 border-b border-zinc-200">
-            <tr>
-                <th class="font-black text-zinc-400 text-[10px] uppercase p-6 tracking-widest">Nombre</th>
-                <th class="font-black text-zinc-400 text-[10px] uppercase p-6 tracking-widest">Descripción</th>
-                <th class="font-black text-zinc-400 text-[10px] uppercase p-6 tracking-widest text-right">Acciones</th>
+    <div class="card bg-base-100 shadow-sm border border-base-300 overflow-hidden">
+        <table class="table table-zebra w-full">
+            <thead class="bg-base-200">
+            <tr class="text-slate-500 uppercase text-[10px] tracking-widest">
+                <th>Nombre</th>
+                <th>Descripción</th>
+                <th class="text-right">Acciones</th>
             </tr>
             </thead>
-            <tbody class="divide-y divide-zinc-100">
-            {faculties && faculties.length > 0 ? (
-                faculties.map((f) => (
-                        <tr class="hover:bg-zinc-50/50 transition-colors group">
-                            <td class="p-6">
-                                <span class="font-bold text-zinc-800">{f.name}</span>
-                            </td>
-                            <td class="p-6">
-                                <span class="text-zinc-500 text-sm italic">{f.description || 'Sin descripción'}</span>
-                            </td>
-                            <td class="p-6 text-right">
-                                <div class="flex justify-end gap-2">
-                                    <!-- Botón Editar -->
-                                    <FacultyModal faculty={f} client:load />
-
-                                    <!-- Botón Eliminar con Confirmación -->
-                                    <DeleteFacultyDialog
-                                            facultyId={f.id}
-                                            facultyName={f.name}
-                                            client:load
-                                    />
-                                </div>
-                            </td>
-                        </tr>
-                ))
-            ) : (
+            <tbody>
+            {faculties?.map((f) => (
                     <tr>
-                        <td colspan="3" class="p-20 text-center text-zinc-400">
-                            <p class="text-sm font-medium">No hay facultades registradas todavía.</p>
+                        <td class="font-bold text-slate-700">{f.name}</td>
+                        <td class="text-sm text-slate-500 italic">{f.description || '---'}</td>
+                        <td class="text-right flex justify-end gap-2">
+                            <!-- BOTÓN EDITAR (con datos embebidos) -->
+                            <button
+                                    class="btn btn-ghost btn-sm text-primary btn-edit"
+                                    data-id={f.id}
+                                    data-name={f.name}
+                                    data-desc={f.description || ''}
+                            >
+                                <Icon name="lucide:pencil" class="w-4 h-4" />
+                            </button>
+
+                            <!-- BOTÓN ELIMINAR (abre el modal de confirmación) -->
+                            <button
+                                    class="btn btn-ghost btn-sm text-error btn-delete"
+                                    data-id={f.id}
+                                    data-name={f.name}
+                            >
+                                <Icon name="lucide:trash-2" class="w-4 h-4" />
+                            </button>
                         </td>
                     </tr>
-            )}
+            ))}
             </tbody>
         </table>
-
-        <button onclick="alert('Astro puro funciona')">Probar Astro</button>
-
-        <script>
-            console.log("El JS de la página funciona");
-        </script>
     </div>
+
+    <!-- MODAL DE GUARDAR (Crear/Editar) -->
+    <dialog id="modal_save" class="modal">
+        <div class="modal-box border border-base-300">
+            <h3 id="save-title" class="font-black text-2xl italic mb-6 text-primary">NUEVA FACULTAD</h3>
+            <form method="POST" action={actions.saveFaculty} id="form-save" class="space-y-4">
+                <input type="hidden" name="id" id="input-id" />
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold uppercase text-[10px]">Nombre</span></label>
+                    <input name="name" id="input-name" type="text" required class="input input-bordered w-full bg-base-200" />
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold uppercase text-[10px]">Descripción</span></label>
+                    <textarea name="description" id="input-desc" class="textarea textarea-bordered h-24 bg-base-200"></textarea>
+                </div>
+                <div class="modal-action flex gap-2">
+                    <button type="button" onclick="modal_save.close()" class="btn btn-ghost">Cancelar</button>
+                    <button type="submit" class="btn btn-primary text-white flex-1 font-bold btn-submit">
+                        <span class="loading-text">Guardar Datos</span>
+                        <span class="hidden-spinner hidden"><Spinner size="loading-sm" /></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- COMPONENTE REUTILIZABLE DE ELIMINAR -->
+    <DeleteModal id="modal_delete" action={actions.deleteFaculty} />
+
 </DashboardLayout>
+
+<script>
+    // Lógica para abrir el modal de CREACIÓN
+    document.getElementById('btn-nueva-facultad')?.addEventListener('click', () => {
+        const form = document.getElementById('form-save') as HTMLFormElement;
+        form.reset();
+        (document.getElementById('input-id') as HTMLInputElement).value = '';
+        (document.getElementById('save-title') as HTMLElement).innerText = 'NUEVA FACULTAD';
+        (document.getElementById('modal_save') as any).showModal();
+    });
+
+    // Lógica para abrir el modal de EDICIÓN
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            const desc = btn.getAttribute('data-desc');
+
+            (document.getElementById('input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('input-name') as HTMLInputElement).value = name || '';
+            (document.getElementById('input-desc') as HTMLTextAreaElement).value = desc || '';
+            (document.getElementById('save-title') as HTMLElement).innerText = 'EDITAR FACULTAD';
+            (document.getElementById('modal_save') as any).showModal();
+        });
+    });
+
+    // Lógica para abrir el modal de ELIMINACIÓN
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML =
+                `¿Estás seguro de eliminar la <strong>${name}</strong>? Esta acción es irreversible.`;
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+
+    // Lógica del SPINNER al enviar formularios
+    document.querySelectorAll('form').forEach(form => {
+        form.addEventListener('submit', () => {
+            const submitBtn = form.querySelector('.btn-submit');
+            if (submitBtn) {
+                submitBtn.classList.add('btn-disabled');
+                submitBtn.querySelector('.loading-text')?.classList.add('hidden');
+                submitBtn.querySelector('.hidden-spinner')?.classList.remove('hidden');
+            }
+        });
+    });
+</script>

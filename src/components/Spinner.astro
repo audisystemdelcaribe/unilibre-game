@@ -1,0 +1,9 @@
+---
+// src/components/Spinner.astro
+interface Props {
+    size?: string;
+    class?: string;
+}
+const { size = "loading-md", class: className } = Astro.props;
+---
+<span class:list={["loading loading-spinner text-current", size, className]}></span>

@@ -1,0 +1,43 @@
+---
+// src/components/DeleteModal.astro
+import { Icon } from 'astro-icon/components';
+import Spinner from './Spinner.astro';
+
+interface Props {
+    id: string;
+    action: any; // La acción de Astro a ejecutar
+    title?: string;
+    message?: string;
+}
+
+const { id, action, title = "¿ELIMINAR REGISTRO?", message = "Esta acción no se puede deshacer." } = Astro.props;
+---
+
+<dialog id={id} class="modal modal-bottom sm:modal-middle">
+    <div class="modal-box border border-base-300 bg-base-100">
+        <div class="flex items-center gap-3 text-error mb-4">
+            <Icon name="lucide:alert-triangle" class="w-8 h-8" />
+            <h3 class="font-black text-xl italic">{title}</h3>
+        </div>
+
+        <p class="py-4 text-slate-600" id={`${id}-message`}>
+            {message}
+        </p>
+
+        <div class="modal-action flex gap-2">
+            <button type="button" class="btn btn-ghost" onclick={`document.getElementById('${id}').close()`}>
+                Cancelar
+            </button>
+
+            <form method="POST" action={action} class="flex-1">
+                <input type="hidden" name="id" id={`${id}-input-id`} />
+                <button type="submit" class="btn btn-error text-white w-full font-bold">
+                    Confirmar Eliminación
+                </button>
+            </form>
+        </div>
+    </div>
+    <form method="dialog" class="modal-backdrop">
+        <button>close</button>
+    </form>
+</dialog>
