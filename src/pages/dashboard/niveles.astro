@@ -1,0 +1,203 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import FormButton from "../../components/FormButton.astro";
+
+// Capturamos resultados para el Toast automático
+const result = Astro.getActionResult(actions.saveLevel) || Astro.getActionResult(actions.deleteLevel);
+
+// 1. Obtener niveles ordenados por dificultad
+const { data: levels } = await Astro.locals.supabase
+    .from('game_levels')
+    .select('*')
+    .order('difficulty_order', { ascending: true });
+
+// Helper para formatear moneda
+const formatMoney = (value: number) => {
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value);
+}
+---
+
+<DashboardLayout title="Niveles y Premios" actionResult={result}>
+    <div class="flex justify-between items-center mb-10">
+        <div>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase text-slate-800">Árbol de Premios</h2>
+            <p class="text-slate-500 font-medium">Configura la escala de dinero y dificultad</p>
+        </div>
+        <button id="btn-nuevo-nivel" class="btn btn-primary text-white font-bold px-8 shadow-lg">
+            <Icon name="lucide:list-plus" class="w-5 h-5" /> Nuevo Escalón
+        </button>
+    </div>
+
+    <!-- TABLA ESTILO MONEY TREE -->
+    <div class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden">
+        <table class="table w-full">
+            <thead class="bg-base-200">
+            <tr class="text-[10px] uppercase tracking-widest text-slate-500 font-bold text-center">
+                <th class="p-6 text-left">Orden</th>
+                <th>Nombre / Etiqueta</th>
+                <th>Valor del Premio</th>
+                <th>Tiempo (seg)</th>
+                <th>Nivel Seguro</th>
+                <th class="text-right">Acciones</th>
+            </tr>
+            </thead>
+            <tbody>
+            {levels?.map((l) => (
+                    <tr class:list={["hover:bg-base-200/50 transition-colors text-center", l.is_safe_level && "bg-blue-50/50"]}>
+                        <td class="p-6 text-left">
+                            <span class="font-black text-2xl text-slate-300">#{l.difficulty_order}</span>
+                        </td>
+                        <td>
+                            <div class="font-bold text-slate-700 uppercase tracking-tight">{l.name}</div>
+                            <div class="text-[10px] opacity-50">{l.points} pts</div>
+                        </td>
+                        <td>
+                            <span class="font-black text-xl text-primary font-mono">{formatMoney(l.money_value)}</span>
+                        </td>
+                        <td>
+                            <div class="badge badge-ghost font-bold gap-1">
+                                <Icon name="lucide:timer" class="w-3 h-3" /> {l.time_limit}s
+                            </div>
+                        </td>
+                        <td>
+                            {l.is_safe_level ? (
+                                    <div class="badge badge-success text-white font-black text-[10px] gap-1 px-3 border-none">
+                                        <Icon name="lucide:shield-check" class="w-3 h-3" /> SEGURO
+                                    </div>
+                            ) : (
+                                    <span class="text-slate-300">—</span>
+                            )}
+                        </td>
+                        <td class="p-6 text-right">
+                            <div class="flex justify-end gap-2">
+                                <button class="btn btn-ghost btn-sm text-primary btn-edit"
+                                        data-id={l.id}
+                                        data-name={l.name}
+                                        data-order={l.difficulty_order}
+                                        data-money={l.money_value}
+                                        data-points={l.points}
+                                        data-time={l.time_limit}
+                                        data-safe={l.is_safe_level ? 'true' : 'false'}
+                                        data-desc={l.description || ''}
+                                >
+                                    <Icon name="lucide:pencil" class="w-4 h-4" />
+                                </button>
+                                <button class="btn btn-ghost btn-sm text-error btn-delete"
+                                        data-id={l.id}
+                                        data-name={l.name}>
+                                    <Icon name="lucide:trash-2" class="w-4 h-4" />
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+            ))}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- MODAL DE GUARDAR -->
+    <dialog id="modal_level" class="modal">
+        <div class="modal-box max-w-md border border-base-300 p-0 overflow-visible bg-base-100">
+            <div class="bg-primary p-6 text-white">
+                <h3 id="modal_title" class="font-black text-2xl italic uppercase tracking-tighter">Configurar Nivel</h3>
+                <p class="text-blue-100 text-[10px] uppercase font-bold opacity-70">Define valores y reglas de este escalón</p>
+            </div>
+
+            <form method="POST" action={actions.saveLevel} id="form-level" class="p-8 space-y-4">
+                <input type="hidden" name="id" id="f_id" />
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Dificultad (#)</span></label>
+                        <input name="difficulty_order" id="f_order" type="number" required min="1" class="input input-bordered w-full font-bold" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Puntos Score</span></label>
+                        <input name="points" id="f_points" type="number" required class="input input-bordered w-full font-bold" value="100" />
+                    </div>
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Nombre del Nivel</span></label>
+                    <input name="name" id="f_name" type="text" required class="input input-bordered w-full" placeholder="Ej: Pregunta 1" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Premio ($)</span></label>
+                        <input name="money_value" id="f_money" type="number" required class="input input-bordered w-full font-mono font-black" placeholder="50000" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Tiempo (seg)</span></label>
+                        <input name="time_limit" id="f_time" type="number" required class="input input-bordered w-full font-bold" value="30" />
+                    </div>
+                </div>
+
+                <div class="form-control bg-base-200 p-4 rounded-xl border border-base-300 mt-2">
+                    <label class="label cursor-pointer justify-start gap-4">
+                        <input type="checkbox" name="is_safe_level" id="f_safe" class="checkbox checkbox-primary" />
+                        <span class="label-text font-bold uppercase text-xs">Marcar como nivel seguro</span>
+                    </label>
+                    <p class="text-[9px] text-slate-500 px-1 italic">Si el jugador falla después de este nivel, conservará este premio.</p>
+                </div>
+
+                <div class="modal-action border-t border-base-300 pt-6 flex gap-3">
+                    <button type="button" onclick="modal_level.close()" class="btn btn-ghost px-8">Cancelar</button>
+                    <FormButton class="btn-primary text-white flex-1 font-black uppercase shadow-lg">
+                        Guardar Nivel
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <DeleteModal id="modal_delete" action={actions.deleteLevel} />
+</DashboardLayout>
+
+<script>
+    const modal = document.getElementById('modal_level') as any;
+    const form = document.getElementById('form-level') as HTMLFormElement;
+
+    if (window.unlockButtons) window.unlockButtons();
+
+    // BOTÓN NUEVA
+    document.getElementById('btn-nuevo-nivel')?.addEventListener('click', () => {
+        form.reset();
+        (document.getElementById('f_id') as HTMLInputElement).value = '';
+        (document.getElementById('modal_title') as HTMLElement).innerText = 'NUEVO ESCALÓN';
+        modal.showModal();
+    });
+
+    // BOTÓN EDITAR
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            form.reset();
+
+            const id = btn.getAttribute('data-id');
+            (document.getElementById('f_id') as HTMLInputElement).value = id || '';
+            (document.getElementById('f_name') as HTMLInputElement).value = btn.getAttribute('data-name') || '';
+            (document.getElementById('f_order') as HTMLInputElement).value = btn.getAttribute('data-order') || '';
+            (document.getElementById('f_money') as HTMLInputElement).value = btn.getAttribute('data-money') || '';
+            (document.getElementById('f_points') as HTMLInputElement).value = btn.getAttribute('data-points') || '';
+            (document.getElementById('f_time') as HTMLInputElement).value = btn.getAttribute('data-time') || '';
+            (document.getElementById('f_safe') as HTMLInputElement).checked = btn.getAttribute('data-safe') === 'true';
+
+            (document.getElementById('modal_title') as HTMLElement).innerText = 'EDITAR ESCALÓN';
+            modal.showModal();
+        });
+    });
+
+    // BOTÓN ELIMINAR
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar el nivel <strong>${name}</strong>? Esto alterará el flujo del dinero.`;
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+</script>
