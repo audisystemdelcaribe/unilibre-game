@@ -16,9 +16,10 @@ const { data: faculties } = await Astro.locals.supabase
   .from('faculties')
   .select('id, name')
   .order('name', { ascending: true });
+const result = Astro.getActionResult(actions.saveProgram) || Astro.getActionResult(actions.deleteProgram);
 ---
 
-<DashboardLayout title="Programas Académicos">
+<DashboardLayout title="Programas Académicos" actionResult={result}>
     <div class="flex justify-between items-center mb-10">
         <div>
             <h2 class="text-4xl font-black italic tracking-tighter uppercase">Programas</h2>
@@ -161,4 +162,8 @@ const { data: faculties } = await Astro.locals.supabase
             (document.getElementById('modal_delete') as any).showModal();
         });
     });
+
+    if (window.unlockButtons) {
+        window.unlockButtons();
+    }
 </script>

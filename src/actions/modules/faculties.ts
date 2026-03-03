@@ -21,7 +21,10 @@ export const facultiesActions = {
                 const { error } = await supabaseAdmin.from('faculties').insert([data]);
                 if (error) throw new Error(error.message);
             }
-            return { success: true };
+            return {
+                success: true,
+                message: id ? "Registro actualizado correctamente" : "Registro creado con éxito"
+            };
         }
     }),
 

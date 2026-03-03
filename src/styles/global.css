@@ -1,17 +1,39 @@
 @import "tailwindcss";
 @plugin "daisyui";
 
-/* Personalización de colores institucionales */
 @theme {
-  --color-primary: #004a99;      /* Azul Unilibre */
-  --color-secondary: #d9232e;    /* Rojo Unilibre */
+  /* Colores Institucionales */
+  --color-unilibre-blue: #004a99;
+  --color-unilibre-red: #d9232e;
 
-  /* Ajustes de diseño */
+  /* COLORES BASE (Fundamentales para el estilo Ghost) */
+  --color-base-100: #ffffff;    /* Color de fondo principal (blanco) */
+  --color-base-200: #f4f4f5;    /* Color para tablas y fondos alternos (gris muy claro) */
+  --color-base-300: #e4e4e7;    /* Bordes y elementos sutiles */
+  --color-base-content: #18181b; /* Color del texto principal (casi negro) */
+
+  /* NEUTRAL (Usado por DaisyUI para botones y badges secundarios) */
+  --color-neutral: #27272a;
+  --color-neutral-content: #ffffff;
+
+  /* Sobrescribir colores de DaisyUI para que funcionen en v4 */
+  --color-primary: var(--color-unilibre-blue);
+  --color-secondary: var(--color-unilibre-red);
+
+  /* COLORES DE ESTADO (Lo que te faltaba) */
+  --color-success: #22c55e;         /* Verde esmeralda */
+  --color-success-content: #ffffff;  /* Texto blanco sobre el verde */
+  --color-error: #ef4444;           /* Rojo error */
+  --color-error-content: #ffffff;
+  --color-warning: #f59e0b;         /* Ambar */
+  --color-info: #3b82f6;            /* Azul claro */
+
+  /* Ajustes de bordes */
   --radius-box: 1.5rem;
   --radius-btn: 0.8rem;
 }
 
-/* Forzar el desenfoque en todos los modales nativos */
+/* Forzar el estilo de los modales nativos */
 dialog::backdrop {
   backdrop-filter: blur(8px);
   background-color: rgba(0, 0, 0, 0.4);

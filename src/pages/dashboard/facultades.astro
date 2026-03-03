@@ -10,9 +10,12 @@ const { data: faculties } = await Astro.locals.supabase
     .from('faculties')
     .select('*')
     .order('name', { ascending: true });
+
+const result = Astro.getActionResult(actions.saveFaculty) || Astro.getActionResult(actions.deleteFaculty);
+
 ---
 
-<DashboardLayout title="Facultades">
+<DashboardLayout title="Facultades" actionResult={result}>
     <div class="flex justify-between items-center mb-10">
         <div>
             <h2 class="text-4xl font-black italic tracking-tighter uppercase">Facultades</h2>
@@ -144,4 +147,9 @@ const { data: faculties } = await Astro.locals.supabase
             }
         });
     });
+
+    if (window.unlockButtons) {
+        window.unlockButtons();
+    }
+
 </script>

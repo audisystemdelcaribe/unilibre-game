@@ -1,12 +1,23 @@
 ---
 import "../styles/global.css";
 import { Icon } from 'astro-icon/components';
+import Toast from "../components/Toast.astro";
 
 interface Props {
     title: string;
+    actionResult?: any;
 }
 
-const { title } = Astro.props;
+const { title, actionResult  } = Astro.props;
+
+let toastInfo = null;
+if (actionResult) {
+    if (actionResult.data?.success) {
+        toastInfo = { type: 'success', message: actionResult.data.message || 'Operación exitosa' };
+    } else if (actionResult.error) {
+        toastInfo = { type: 'error', message: actionResult.error.message || 'Ocurrió un error' };
+    }
+}
 
 // 1. Recuperar sesión y perfil (Asegúrate que esto no falle)
 const user = await Astro.locals.getUser();
@@ -107,6 +118,9 @@ const filteredMenu = menuOptions.filter(opt => opt.roles.includes(role));
 
 <!-- ÁREA DE CONTENIDO -->
 <main class="flex-1 flex flex-col h-screen overflow-y-auto relative">
+
+    {toastInfo && <Toast type={toastInfo.type as any} message={toastInfo.message} />}
+
     <div class="p-8 lg:p-12">
         <slot />
     </div>

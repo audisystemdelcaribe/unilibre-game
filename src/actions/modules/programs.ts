@@ -26,7 +26,10 @@ export const programsActions = {
                 const { error } = await supabaseAdmin.from('programs').insert([data]);
                 if (error) throw new Error(error.message);
             }
-            return { success: true };
+            return {
+                success: true,
+                message: id ? "Registro actualizado correctamente" : "Registro creado con éxito"
+            };
         }
     }),
 

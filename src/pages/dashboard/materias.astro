@@ -12,12 +12,13 @@ const page = parseInt(url.searchParams.get('page') || '1');
 const from = (page - 1) * pageSize;
 const to = from + pageSize - 1;
 
-// 1. Obtener materias con sus programas vinculados y conteo total
+// 1. CORRECCIÓN EN LA CONSULTA: Añadimos 'program_id'
 const { data: subjects, count, error } = await Astro.locals.supabase
     .from('subjects')
     .select(`
     *,
     program_subjects (
+      program_id,
       semester,
       programs (
         name
@@ -27,35 +28,34 @@ const { data: subjects, count, error } = await Astro.locals.supabase
     .order('name', { ascending: true })
     .range(from, to);
 
-if (error) {
-    console.error("ERROR DE CONSULTA:", error);
-} else {
-    console.log("MATERIAS CARGADAS:", subjects);
-}
+if (error) console.error("ERROR DE CONSULTA:", error);
+
 const totalPages = Math.ceil((count || 0) / pageSize);
 
-// 2. Obtener Facultades y Programas para el Modal
 const { data: faculties } = await Astro.locals.supabase.from('faculties').select('id, name').order('name');
 const { data: allPrograms } = await Astro.locals.supabase.from('programs').select('id, name, faculty_id').order('name');
+const result = Astro.getActionResult(actions.saveSubject) || Astro.getActionResult(actions.deleteSubject);
 ---
 
-<DashboardLayout title="Materias">
+<DashboardLayout title="Materias" actionResult={result}>
+    <!-- El resto de tu HTML se mantiene igual, pero verifica este botón: -->
+    <!-- (Asegúrate de que data-links esté recibiendo el JSON con los program_id) -->
+
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
         <div>
-            <h2 class="text-4xl font-black italic tracking-tighter uppercase">Banco de Materias</h2>
-            <p class="text-slate-500 font-medium">Total: {count} registros encontrados</p>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase text-slate-800">Materias</h2>
+            <p class="text-slate-500 font-medium text-sm">Total: {count} registros</p>
         </div>
         <button id="btn-nueva-materia" class="btn btn-primary text-white font-bold px-8 shadow-lg">
             <Icon name="lucide:plus" class="w-5 h-5" /> Nueva Materia
         </button>
     </div>
 
-    <!-- TABLA PRINCIPAL -->
     <div class="card bg-base-100 border border-base-300 shadow-sm overflow-hidden mb-6">
         <div class="overflow-x-auto">
             <table class="table table-zebra w-full">
                 <thead class="bg-base-200">
-                <tr class="text-[10px] uppercase tracking-widest text-slate-500">
+                <tr class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
                     <th class="p-6">Nombre de la Materia</th>
                     <th class="p-6">Programas / Semestres</th>
                     <th class="p-6 text-right">Acciones</th>
@@ -72,7 +72,7 @@ const { data: allPrograms } = await Astro.locals.supabase.from('programs').selec
                                 <div class="flex flex-wrap gap-1">
                                     {s.program_subjects.map((ps: any) => (
                                             <div class="badge badge-outline border-primary/30 text-primary font-bold text-[10px] uppercase gap-1 p-3">
-                                                {ps.programs.name} <span class="bg-primary text-white px-1.5 rounded-md">{ps.semester}°</span>
+                                                {ps.programs?.name} <span class="bg-primary text-white px-1.5 rounded-md">{ps.semester}°</span>
                                             </div>
                                     ))}
                                 </div>
@@ -80,8 +80,11 @@ const { data: allPrograms } = await Astro.locals.supabase.from('programs').selec
                             <td class="p-6 text-right">
                                 <div class="flex justify-end gap-2">
                                     <button class="btn btn-ghost btn-sm text-primary btn-edit"
-                                            data-id={s.id} data-name={s.name} data-desc={s.description || ''}
-                                            data-links={JSON.stringify(s.program_subjects)}>
+                                            data-id={s.id}
+                                            data-name={s.name}
+                                            data-desc={s.description || ''}
+                                            data-links={JSON.stringify(s.program_subjects)}
+                                    >
                                         <Icon name="lucide:pencil" class="w-4 h-4" />
                                     </button>
                                     <button class="btn btn-ghost btn-sm text-error btn-delete" data-id={s.id} data-name={s.name}>
@@ -95,19 +98,20 @@ const { data: allPrograms } = await Astro.locals.supabase.from('programs').selec
             </table>
         </div>
 
-        <!-- PAGINACIÓN -->
-        <div class="p-4 bg-base-100 border-t border-base-200 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <span class="text-xs font-bold text-slate-400 uppercase">Página {page} de {totalPages}</span>
+        <!-- Paginación se queda igual -->
+        <div class="p-4 bg-base-100 border-t border-base-200 flex justify-between items-center">
+            <span class="text-xs font-bold text-slate-400">Página {page} de {totalPages}</span>
             <div class="join">
-                <a href={`?page=${page - 1}`} class:list={["join-item btn btn-sm", page <= 1 && "btn-disabled"]}>« Anterior</a>
+                <a href={`?page=${page - 1}`} class:list={["join-item btn btn-sm", page <= 1 && "btn-disabled"]}>Anterior</a>
                 <button class="join-item btn btn-sm btn-active">{page}</button>
-                <a href={`?page=${page + 1}`} class:list={["join-item btn btn-sm", page >= totalPages && "btn-disabled"]}>Siguiente »</a>
+                <a href={`?page=${page + 1}`} class:list={["join-item btn btn-sm", page >= totalPages && "btn-disabled"]}>Siguiente</a>
             </div>
         </div>
     </div>
 
-    <!-- MODAL MULTI-PROGRAMA -->
+    <!-- El Modal y el Script se mantienen como el bloque corregido que te daré abajo -->
     <dialog id="modal_subject" class="modal">
+        <!-- ... (Contenido del modal que ya tienes) ... -->
         <div class="modal-box max-w-4xl border border-base-300 p-0 overflow-visible bg-base-100">
             <div class="bg-primary p-6 text-white flex justify-between items-center">
                 <div>
@@ -121,24 +125,22 @@ const { data: allPrograms } = await Astro.locals.supabase.from('programs').selec
                 <input type="hidden" name="id" id="f_id" />
                 <input type="hidden" name="program_links" id="f_program_links" />
 
-                <!-- SECCIÓN 1: DATOS BÁSICOS -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="form-control">
                         <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Nombre de la Materia</span></label>
-                        <input id="f_name" name="name" type="text" required class="input input-bordered w-full font-bold" placeholder="Cálculo Diferencial..." />
+                        <input id="f_name" name="name" type="text" required class="input input-bordered w-full font-bold" />
                     </div>
                     <div class="form-control">
                         <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Descripción</span></label>
-                        <input id="f_desc" name="description" type="text" class="input input-bordered w-full" placeholder="Opcional..." />
+                        <input id="f_desc" name="description" type="text" class="input input-bordered w-full" />
                     </div>
                 </div>
 
-                <!-- SECCIÓN 2: VÍNCULOS DINÁMICOS -->
                 <div class="space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-base-300 pb-2 gap-2">
-                        <span class="font-black text-sm italic text-primary uppercase">Asignar a Programas Académicos</span>
+                        <span class="font-black text-sm italic text-primary uppercase text-[10px]">Vincular Programas</span>
                         <select id="faculty_filter" class="select select-bordered select-sm font-bold text-xs">
-                            <option value="">Filtrar por Facultad...</option>
+                            <option value="">Selecciona Facultad...</option>
                             {faculties?.map(f => <option value={f.id}>{f.name}</option>)}
                         </select>
                     </div>
@@ -152,15 +154,14 @@ const { data: allPrograms } = await Astro.locals.supabase.from('programs').selec
                                     </div>
                                     <div class="flex items-center gap-1 bg-white p-1 rounded-lg border border-base-300">
                                         <span class="text-[9px] font-black opacity-30">SEM</span>
-                                        <input type="number" min="1" max="12" value="1" class="input input-ghost input-xs w-8 p-0 text-center font-black text-primary prog-semester" />
+                                        <input type="number" min="1" max="12" value="1" class="input input-ghost input-xs w-8 p-0 text-center font-black text-primary prog-semester" required />
                                     </div>
                                 </div>
                         ))}
                     </div>
 
                     <div id="no_faculty_msg" class="text-center py-12 bg-base-200 rounded-2xl border-2 border-dashed border-base-300 text-slate-400 text-sm italic">
-                        <Icon name="lucide:search" class="w-8 h-8 mx-auto mb-2 opacity-20" />
-                        Selecciona una facultad arriba para vincular programas.
+                        Selecciona una facultad arriba para ver programas.
                     </div>
                 </div>
 
@@ -181,75 +182,90 @@ const { data: allPrograms } = await Astro.locals.supabase.from('programs').selec
     const modal = document.getElementById('modal_subject') as any;
     const form = document.getElementById('form-subject') as HTMLFormElement;
     const facultyFilter = document.getElementById('faculty_filter') as HTMLSelectElement;
+    const noFacultyMsg = document.getElementById('no_faculty_msg');
 
-    // --- 1. VALIDACIÓN AL ENVIAR ---
+    function unlockButton() {
+        const btn = form.querySelector('button[type="submit"]');
+        if (btn) {
+            btn.removeAttribute('disabled');
+            btn.classList.remove('btn-disabled', 'is-loading');
+        }
+    }
+
+    // 1. Función unificada de filtrado
+    function filtrarVista(facultyId: string) {
+        const items = document.querySelectorAll('.program-item');
+        let count = 0;
+        items.forEach((item: any) => {
+            const isChecked = item.querySelector('.prog-check').checked;
+            const belongs = item.getAttribute('data-faculty-id') === facultyId;
+
+            // MOSTRAR si es de la facultad O si ya está seleccionado
+            if (belongs || isChecked) {
+                item.classList.remove('hidden');
+                count++;
+            } else {
+                item.classList.add('hidden');
+            }
+        });
+        noFacultyMsg?.classList.toggle('hidden', count > 0);
+    }
+
+    facultyFilter.addEventListener('change', () => filtrarVista(facultyFilter.value));
+
+    // 2. Envío de Formulario
     form.addEventListener('submit', (e) => {
         const checkedOnes = document.querySelectorAll('.prog-check:checked');
-
         if (checkedOnes.length === 0) {
             e.preventDefault();
-            e.stopImmediatePropagation(); // Detiene el script del Layout
-            alert("⚠️ Error: Debes seleccionar al menos un programa académico.");
-
-            // Usamos la función global que creamos en el Layout
-            if (typeof (window as any).unlockSubmitButtons === 'function') {
-                (window as any).unlockSubmitButtons();
-            }
+            e.stopImmediatePropagation();
+            alert("⚠️ Debes vincular al menos un programa.");
+            unlockButton();
             return;
         }
-
-        const links: any[] = [];
-        checkedOnes.forEach((check: any) => {
-            const container = check.closest('.program-item');
-            const semesterInput = container.querySelector('.prog-semester') as HTMLInputElement;
-            links.push({
-                program_id: check.getAttribute('data-prog-id'),
-                semester: semesterInput.value || 1
-            });
-        });
-
+        const links = Array.from(checkedOnes).map((check: any) => ({
+            program_id: check.getAttribute('data-prog-id'),
+            semester: check.closest('.program-item').querySelector('.prog-semester').value || 1
+        }));
         (document.getElementById('f_program_links') as HTMLInputElement).value = JSON.stringify(links);
     });
 
-    // --- 2. LÓGICA DE EDICIÓN ---
+    // 3. EDITAR (La parte que fallaba)
     document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', () => {
-            // A) Limpiar todo antes de empezar
             form.reset();
-            facultyFilter.value = "";
             document.querySelectorAll('.program-item').forEach(i => i.classList.add('hidden'));
-            document.getElementById('no_faculty_msg')?.classList.remove('hidden');
+            document.querySelectorAll('.prog-check').forEach((c: any) => c.checked = false);
 
-            // B) Cargar datos básicos
             const id = btn.getAttribute('data-id');
             const name = btn.getAttribute('data-name');
             const desc = btn.getAttribute('data-desc');
-            const linksRaw = btn.getAttribute('data-links');
-            const links = JSON.parse(linksRaw || '[]');
+            const links = JSON.parse(btn.getAttribute('data-links') || '[]');
 
             (document.getElementById('f_id') as HTMLInputElement).value = id || '';
             (document.getElementById('f_name') as HTMLInputElement).value = name || '';
             (document.getElementById('f_desc') as HTMLInputElement).value = desc || '';
 
-            // C) Marcar y MOSTRAR programas vinculados
             if (links.length > 0) {
-                document.getElementById('no_faculty_msg')?.classList.add('hidden');
+                // Buscamos la facultad del primer programa para poner el select
+                const primerId = links[0].program_id;
+                const primerCheck = document.querySelector(`.prog-check[data-prog-id="${primerId}"]`);
+                const facultyId = primerCheck?.closest('.program-item')?.getAttribute('data-faculty-id');
 
+                if (facultyId) facultyFilter.value = facultyId;
+
+                // Marcamos los programas
                 links.forEach((l: any) => {
-                    // Buscamos el checkbox por el ID del programa
                     const check = document.querySelector(`.prog-check[data-prog-id="${l.program_id}"]`) as HTMLInputElement;
                     if (check) {
                         check.checked = true;
-                        const container = check.closest('.program-item') as HTMLElement;
-                        container.classList.remove('hidden'); // Forzamos visibilidad
-
-                        const semInput = container.querySelector('.prog-semester') as HTMLInputElement;
-                        if (semInput) {
-                            semInput.value = l.semester;
-                            semInput.disabled = false; // Aseguramos que sea editable
-                        }
+                        const semInput = check.closest('.program-item')?.querySelector('.prog-semester') as HTMLInputElement;
+                        semInput.value = l.semester;
                     }
                 });
+
+                // Actualizamos la vista para que se vean los marcados
+                filtrarVista(facultyFilter.value);
             }
 
             document.getElementById('modal_title')!.innerText = 'EDITAR MATERIA';
@@ -257,37 +273,19 @@ const { data: allPrograms } = await Astro.locals.supabase.from('programs').selec
         });
     });
 
-    // --- 3. FILTRADO POR FACULTAD ---
-    facultyFilter.addEventListener('change', () => {
-        const selectedId = facultyFilter.value;
-        const items = document.querySelectorAll('.program-item');
-        let visibles = 0;
-
-        items.forEach((item: any) => {
-            const isRelatedToFaculty = item.dataset.facultyId === selectedId;
-            const isChecked = item.querySelector('.prog-check').checked;
-
-            // Se muestra si es de la facultad seleccionada O si el usuario ya lo marcó
-            if (isRelatedToFaculty || isChecked) {
-                item.classList.remove('hidden');
-                visibles++;
-            } else {
-                item.classList.add('hidden');
-            }
-        });
-
-        document.getElementById('no_faculty_msg')?.classList.toggle('hidden', visibles > 0);
-    });
-
-    // --- 4. BOTÓN NUEVO ---
+    // 4. NUEVO
     document.getElementById('btn-nueva-materia')?.addEventListener('click', () => {
         form.reset();
         (document.getElementById('f_id') as HTMLInputElement).value = '';
-        document.querySelectorAll('.prog-check').forEach((c: any) => c.checked = false);
-        document.querySelectorAll('.program-item').forEach(i => i.classList.add('hidden'));
-        document.getElementById('no_faculty_msg')?.classList.remove('hidden');
         facultyFilter.value = "";
+        document.querySelectorAll('.program-item').forEach(i => i.classList.add('hidden'));
+        document.querySelectorAll('.prog-check').forEach((c: any) => c.checked = false);
+        noFacultyMsg?.classList.remove('hidden');
         document.getElementById('modal_title')!.innerText = 'NUEVA MATERIA';
         modal.showModal();
     });
+
+    if (window.unlockButtons) {
+        window.unlockButtons();
+    }
 </script>

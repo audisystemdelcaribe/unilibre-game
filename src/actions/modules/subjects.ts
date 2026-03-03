@@ -40,7 +40,10 @@ export const subjectsActions = {
             }));
 
             await supabaseAdmin.from('program_subjects').insert(insertData);
-            return { success: true };
+            return {
+                success: true,
+                message: id ? "Registro actualizado correctamente" : "Registro creado con éxito"
+            };
         }
     }),
 

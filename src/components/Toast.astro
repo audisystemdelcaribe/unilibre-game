@@ -1,0 +1,37 @@
+---
+// src/components/Toast.astro
+import { Icon } from 'astro-icon/components';
+
+interface Props {
+    message: string;
+    type: 'success' | 'error';
+}
+
+const { message, type } = Astro.props;
+
+// Definimos el icono según el tipo
+const iconName = type === 'success' ? 'lucide:circle-check' : 'lucide:circle-alert';
+---
+
+<div id="global-toast" class="toast toast-top toast-end z-[9999] p-4">
+    <div class:list={[
+        "alert shadow-2xl border-none text-white font-bold text-xs uppercase tracking-widest px-6 py-4 flex items-center gap-3 min-w-[300px]",
+        type === 'success' ? 'bg-success text-success-content' : 'bg-error text-error-content'
+    ]}>
+        <Icon name={iconName} class="w-5 h-5 shrink-0" />
+        <span>{message}</span>
+    </div>
+</div>
+
+<script is:inline>
+    // Animación de salida y auto-eliminación
+    setTimeout(() => {
+        const toast = document.getElementById('global-toast');
+        if (toast) {
+            toast.style.transition = 'all 0.5s ease';
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-20px)';
+            setTimeout(() => toast.remove(), 500);
+        }
+    }, 4000);
+</script>
