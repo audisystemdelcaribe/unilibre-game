@@ -1,0 +1,104 @@
+---
+import "@/styles/global.css";
+import { Icon } from 'astro-icon/components';
+
+const { round_id } = Astro.params;
+
+// 1. Obtener datos iniciales de la sesión
+const { data: round, error } = await Astro.locals.supabase
+    .from('event_rounds')
+    .select('*, events(name)')
+    .eq('id', round_id)
+    .single();
+
+if (error || !round) return Astro.redirect("/play?error=sesion_no_encontrada");
+
+// 2. Si por casualidad el juego ya empezó, mandarlo directo al juego
+if (round.status === 'active') {
+    return Astro.redirect(`/play/game/${round_id}`);
+}
+
+const user = await Astro.locals.getUser();
+---
+
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Esperando inicio... | Unilibre Game</title>
+</head>
+<body class="bg-primary min-h-screen flex flex-col items-center justify-center p-6 text-white font-sans text-center">
+
+<div class="w-full max-w-md">
+    <!-- HEADER -->
+    <div class="mb-12 animate-pulse">
+        <h2 class="text-blue-200 font-bold uppercase tracking-widest text-sm mb-2">{round.events?.name}</h2>
+        <h1 class="text-4xl font-black italic uppercase tracking-tighter">¡ESTÁS DENTRO!</h1>
+    </div>
+
+    <!-- CONTENEDOR CENTRAL -->
+    <div class="bg-white text-zinc-900 p-10 rounded-[3rem] shadow-2xl relative overflow-hidden mb-12">
+        <div class="flex flex-col items-center gap-6">
+            <!-- Icono animado -->
+            <div class="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center text-primary animate-bounce">
+                <Icon name="lucide:gamepad-2" class="w-12 h-12" />
+            </div>
+
+            <div>
+                <h3 class="text-2xl font-black uppercase italic tracking-tight mb-2">Sala de espera</h3>
+                <p class="text-zinc-500 font-medium leading-tight">
+                    Mantén esta pantalla abierta. El docente iniciará el concurso en breve.
+                </p>
+            </div>
+
+            <div class="badge badge-primary badge-lg font-bold py-4 px-6 gap-2">
+                <span class="loading loading-ring loading-xs"></span>
+                Sincronizando...
+            </div>
+        </div>
+    </div>
+
+    <!-- PERFIL DEL ALUMNO -->
+    <div class="flex items-center justify-center gap-3 opacity-80">
+        <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-bold border border-white/30 uppercase">
+            {user?.email?.charAt(0)}
+        </div>
+        <div class="text-left">
+            <p class="text-[10px] font-black uppercase tracking-widest opacity-60">Listo para jugar</p>
+            <p class="text-sm font-bold truncate">{user?.email}</p>
+        </div>
+    </div>
+</div>
+
+<!-- SCRIPTS DE REALTIME -->
+<script is:inline src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script is:inline define:vars={{
+    url: import.meta.env.PUBLIC_SUPABASE_URL,
+    key: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    roundId: round_id
+}}>
+    const supabaseClient = supabase.createClient(url, key);
+
+    // ESCUCHAR CAMBIOS EN LA RONDA
+    const channel = supabaseClient
+        .channel('waiting_room')
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'event_rounds',
+                filter: `id=eq.${roundId}`
+            },
+            (payload) => {
+                console.log('Cambio de estado detectado:', payload.new.status);
+
+                // Si el estado cambia a 'active', mandamos al alumno al juego
+                if (payload.new.status === 'active') {
+                    window.location.href = `/play/game/${roundId}`;
+                }
+            }
+        )
+        .subscribe();
+</script>
+</body>
+</html>

@@ -1,157 +1,54 @@
 ---
 import "../../styles/global.css";
-// Obtenemos el usuario actual para verificar que esté logueado antes de mostrar la página
+import { actions } from "astro:actions";
+import FormButton from "../../components/FormButton.astro";
+
 const user = await Astro.locals.getUser();
-if (!user) {
-    return Astro.redirect("/");
+if (!user) return Astro.redirect("/");
+
+// Capturamos el resultado de la acción
+const result = Astro.getActionResult(actions.joinRoom);
+
+// Si tuvo éxito, redirigimos desde el servidor
+if (result?.data?.success) {
+    return Astro.redirect(`/play/waiting/${result.data.round_id}`);
 }
 ---
 
 <html lang="es">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Unirse al Juego | Unilibre Game</title>
 </head>
-<body class="bg-zinc-950 text-white min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+<body class="bg-zinc-950 text-white min-h-screen flex flex-col items-center justify-center p-4">
 
 <div class="w-full max-w-md text-center">
-    <!-- HEADER -->
-    <div class="mb-10">
-        <h1 class="text-6xl font-black italic tracking-tighter text-white mb-2">¡PREPÁRATE!</h1>
-        <p class="text-zinc-500 font-bold uppercase tracking-widest text-sm">Ingresa a la Carrera del Saber</p>
-    </div>
+    <h1 class="text-6xl font-black italic tracking-tighter mb-10">¡PREPÁRATE!</h1>
 
-    <!-- TARJETA DE ACCESO -->
-    <div class="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
-        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent opacity-50"></div>
+    <div class="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl">
+        <p class="text-zinc-400 font-bold uppercase text-xs mb-6">PIN DE ACCESO</p>
 
-        <p class="text-zinc-400 font-bold uppercase text-xs mb-6">PIN DE ACCESO AL SALÓN</p>
+        <form method="POST" action={actions.joinRoom} class="space-y-8">
+            <input
+                    name="pin"
+                    type="text"
+                    inputmode="numeric"
+                    placeholder="0000"
+                    class="input input-bordered w-full text-center text-5xl font-black tracking-[0.4em] h-28 bg-zinc-800 border-zinc-700 text-primary outline-none"
+                    required
+            />
 
-        <form id="join-form" class="space-y-8">
-            <div class="relative">
-                <input
-                        id="pin-input"
-                        type="text"
-                        inputmode="numeric"
-                        maxlength="6"
-                        placeholder="0000"
-                        class="input input-bordered w-full text-center text-5xl font-black tracking-[0.4em] h-28 bg-zinc-800 border-zinc-700 text-primary focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
-                        required
-                        autocomplete="off"
-                />
-            </div>
-
-            <button type="submit" id="btn-entrar" class="btn btn-primary btn-lg w-full text-white font-black italic uppercase tracking-widest shadow-xl h-16 text-xl hover:scale-[1.02] active:scale-95 transition-all">
+            <FormButton class="btn-primary btn-lg w-full text-white font-black italic uppercase tracking-widest shadow-xl">
                 ¡ENTRAR AHORA!
-            </button>
+            </FormButton>
         </form>
 
-        <div id="error-box" class="mt-6 p-4 bg-red-500/10 border border-red-500/50 rounded-2xl hidden">
-            <p id="error-message" class="text-red-500 text-xs font-bold uppercase"></p>
-        </div>
+        {result?.error && (
+                <div class="mt-6 p-4 bg-red-500/10 border border-red-500/50 rounded-2xl">
+                    <p class="text-red-500 text-xs font-bold uppercase">{result.error.message}</p>
+                </div>
+        )}
     </div>
-
-    <!-- INFO DEL USUARIO -->
-    <p class="mt-8 text-zinc-600 text-xs font-medium">
-        Conectado como: <span class="text-zinc-400">{user.email}</span>
-    </p>
 </div>
-
-<!-- SCRIPTS -->
-<script is:inline src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script is:inline define:vars={{
-    url: import.meta.env.PUBLIC_SUPABASE_URL,
-    key: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY
-}}>
-    // 1. Inicialización segura
-    const supabaseClient = supabase.createClient(url, key);
-    const form = document.getElementById('join-form');
-    const errorBox = document.getElementById('error-box');
-    const errorMessage = document.getElementById('error-message');
-    const btnEntrar = document.getElementById('btn-entrar');
-
-    function showError(text) {
-        errorMessage.innerText = text;
-        errorBox.classList.remove('hidden');
-        setTimeout(() => {
-            errorBox.classList.add('hidden');
-        }, 5000);
-    }
-
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const pinRaw = document.getElementById('pin-input').value;
-        const pin = pinRaw.trim();
-
-        console.log("--- INTENTO DE ACCESO ---");
-        console.log("PIN ingresado:", pin);
-
-        btnEntrar.innerHTML = '<span class="loading loading-spinner"></span> BUSCANDO...';
-        btnEntrar.disabled = true;
-
-        try {
-            // 1. BUSCAR EL SALÓN POR PIN (En estados waiting o active)
-            const { data: round, error: roundError } = await supabaseClient
-                .from('event_rounds')
-                .select('*')
-                .eq('session_pin', pin)
-                .in('status', ['waiting', 'active'])
-                .maybeSingle();
-
-            if (roundError) {
-                console.error("Error Supabase:", roundError);
-                throw new Error("Error al conectar con la base de datos.");
-            }
-
-            if (!round) {
-                console.warn("PIN no encontrado o sesión finalizada.");
-                showError("PIN INCORRECTO O SALÓN CERRADO");
-                btnEntrar.innerText = "¡ENTRAR AHORA!";
-                btnEntrar.disabled = false;
-                return;
-            }
-
-            console.log("Salón encontrado:", round.classroom_group_id);
-
-            // 2. OBTENER PERFIL DEL JUGADOR
-            const { data: { user } } = await supabaseClient.auth.getUser();
-            const { data: player, error: pError } = await supabaseClient
-                .from('players')
-                .select('id')
-                .eq('auth_user_id', user.id)
-                .single();
-
-            if (pError || !player) {
-                throw new Error("No se encontró tu perfil de jugador.");
-            }
-
-            // 3. REGISTRARSE EN EL EVENTO (UPSERT para permitir re-entrada)
-            const { error: joinError } = await supabaseClient
-                .from('event_players')
-                .upsert({
-                    event_id: round.event_id,
-                    player_id: player.id,
-                    classroom_group_id: round.classroom_group_id,
-                    stage: 'lobby'
-                }, { onConflict: 'event_id, player_id' });
-
-            if (joinError) {
-                console.error("Error al unirse:", joinError);
-                throw new Error("No pudimos registrarte en el salón.");
-            }
-
-            // 4. ÉXITO: REDIRIGIR AL LOBBY DEL ESTUDIANTE
-            console.log("¡Éxito! Redirigiendo...");
-            window.location.href = `/play/waiting/${round.id}`;
-
-        } catch (err) {
-            console.error("ERROR CRÍTICO:", err.message);
-            showError(err.message.toUpperCase());
-            btnEntrar.innerText = "¡ENTRAR AHORA!";
-            btnEntrar.disabled = false;
-        }
-    });
-</script>
 </body>
 </html>

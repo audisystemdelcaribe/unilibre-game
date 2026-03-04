@@ -32,48 +32,63 @@ const { data: round } = await Astro.locals.supabase
         </div>
     </div>
 </DashboardLayout>
-
 <script is:inline define:vars={{ round }}>
-    // 1. Elementos de la UI
-    const grid = document.getElementById('players-grid');
-    const countEl = document.getElementById('player-count');
+    async function iniciarLobby() {
+        const client = window.supabaseClient;
+        const grid = document.getElementById('players-grid');
+        const countEl = document.getElementById('player-count');
 
-    // 2. Escuchar cambios en la tabla event_players
-    // Solo nos interesan los que entren a ESTE evento y ESTE grupo
-    const channel = window.supabase
-        .channel('lobby_room')
-        .on(
-            'postgres_changes',
-            {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'event_players',
-                filter: `event_id=eq.${round.event_id}`
-            },
-            async (payload) => {
-                // Verificamos que sea de nuestro grupo (filtro manual)
-                if (payload.new.classroom_group_id === round.classroom_group_id) {
+        if (!client) {
+            setTimeout(iniciarLobby, 500);
+            return;
+        }
 
-                    // Buscamos el nombre del alumno para mostrarlo
-                    const { data: player } = await window.supabase
-                        .from('players')
-                        .select('name')
-                        .eq('id', payload.new.player_id)
-                        .single();
+        // Limpiamos canales para evitar duplicados al refrescar
+        client.removeAllChannels();
 
-                    if (player) {
-                        // Añadir a la cuadrícula con una animación de entrada
-                        const div = document.createElement('div');
-                        div.className = "bg-white p-4 rounded-2xl border-2 border-primary shadow-lg animate-bounce text-center";
-                        div.innerHTML = `<p class="font-black text-primary uppercase text-xs truncate">${player.name}</p>`;
-                        grid.appendChild(div);
+        client
+            .channel('lobby_channel')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'event_players' },
+                async (payload) => {
+                    console.log("📢 MENSAJE RECIBIDO:", payload.new);
 
-                        // Actualizar contador
-                        const currentCount = parseInt(countEl.innerText);
-                        countEl.innerText = currentCount + 1;
+                    // COMPARACIÓN SEGURA (Convertimos todo a String para no fallar)
+                    const sameEvent = String(payload.new.event_id) === String(round.event_id);
+                    const sameGroup = String(payload.new.classroom_group_id) === String(round.classroom_group_id);
+
+                    if (sameEvent && sameGroup) {
+                        console.log("✅ Estudiante validado. Buscando nombre...");
+
+                        const { data: player } = await client
+                            .from('players')
+                            .select('name')
+                            .eq('id', payload.new.player_id)
+                            .single();
+
+                        if (player) {
+                            const idDiv = `player-${payload.new.player_id}`;
+                            if (document.getElementById(idDiv)) return; // Evitar duplicados
+
+                            const div = document.createElement('div');
+                            div.id = idDiv;
+                            div.className = "bg-white p-4 rounded-2xl border-2 border-primary shadow-lg animate-bounce text-center";
+                            div.innerHTML = `<p class="font-black text-primary uppercase text-[10px] truncate">${player.name}</p>`;
+                            grid?.appendChild(div);
+
+                            if (countEl) {
+                                let c = parseInt(countEl.innerText) || 0;
+                                countEl.innerText = (c + 1).toString();
+                            }
+                        }
+                    } else {
+                        console.log("ℹ️ El registro pertenece a otro salón o evento.");
                     }
                 }
-            }
-        )
-        .subscribe();
+            )
+            .subscribe((status) => console.log("📡 ESTADO REALTIME:", status));
+    }
+
+    iniciarLobby();
 </script>

@@ -60,5 +60,50 @@ export const liveSessionsActions = {
             if (error) throw new Error(error.message);
             return { success: true };
         }
+    }),
+    joinRoom: defineAction({
+        accept: 'form',
+        input: z.object({
+            pin: z.string().min(4).max(6),
+        }),
+        handler: async ({ pin }, context) => {
+            // 1. Obtener usuario de la sesión del servidor (Cookies)
+            const user = await context.locals.getUser();
+            if (!user) throw new Error("Debes iniciar sesión");
+
+            // 2. Buscar el salón activo por PIN
+            const { data: round, error: rError } = await supabaseAdmin
+                .from('event_rounds')
+                .select('*')
+                .eq('session_pin', pin)
+                .in('status', ['waiting', 'active'])
+                .maybeSingle();
+
+            if (rError || !round) throw new Error("PIN incorrecto o salón cerrado");
+
+            // 3. Obtener el ID del jugador
+            const { data: player } = await supabaseAdmin
+                .from('players')
+                .select('id')
+                .eq('auth_user_id', user.id)
+                .single();
+
+            if (!player) throw new Error("No se encontró perfil de jugador");
+
+            // 4. Registrar al estudiante (Upsert)
+            const { error: joinError } = await supabaseAdmin
+                .from('event_players')
+                .upsert({
+                    event_id: round.event_id,
+                    player_id: player.id,
+                    classroom_group_id: round.classroom_group_id,
+                    stage: 'lobby'
+                }, { onConflict: 'event_id, player_id' });
+
+            if (joinError) throw new Error("Error al registrarse en el salón");
+
+            // Devolvemos el ID de la ronda para que el cliente redirija
+            return { success: true, round_id: round.id };
+        }
     })
 };
