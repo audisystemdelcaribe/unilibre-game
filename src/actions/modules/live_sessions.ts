@@ -43,5 +43,22 @@ export const liveSessionsActions = {
                 round_id: round.id
             };
         }
+    }),
+    startGame: defineAction({
+        accept: 'form',
+        input: z.object({ round_id: z.string() }),
+        handler: async ({ round_id }, context) => {
+            await ensureStaff(context);
+
+            // 1. Cambiamos el estado a 'active'
+            // 2. Opcional: Aquí podrías elegir la primera pregunta aleatoria
+            const { error } = await supabaseAdmin
+                .from('event_rounds')
+                .update({ status: 'active', round_number: 1 })
+                .eq('id', parseInt(round_id));
+
+            if (error) throw new Error(error.message);
+            return { success: true };
+        }
     })
 };

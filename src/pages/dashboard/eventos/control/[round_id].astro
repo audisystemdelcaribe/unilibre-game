@@ -1,0 +1,79 @@
+---
+import DashboardLayout from "@/layouts/DashboardLayout.astro";
+const { round_id } = Astro.params; // Aquí ya recibimos el ID de la RONDA generada
+
+// Obtenemos los datos de la ronda y el nombre del evento
+const { data: round } = await Astro.locals.supabase
+    .from('event_rounds')
+    .select('*, events(name)')
+    .eq('id', round_id)
+    .single();
+---
+
+<DashboardLayout title="Control en Vivo">
+    <div class="flex flex-col items-center justify-center text-center py-10">
+        <h2 class="text-slate-400 font-bold uppercase tracking-widest">{round?.events?.name}</h2>
+        <h1 class="text-5xl font-black italic uppercase text-primary mb-12">{round?.classroom_group_id}</h1>
+
+        <!-- PIN GIGANTE -->
+        <div class="bg-zinc-900 p-12 rounded-[3rem] border-4 border-primary shadow-2xl mb-12">
+            <p class="text-zinc-500 font-bold uppercase tracking-widest mb-4">Código de acceso</p>
+            <div class="flex gap-4">
+                {round?.session_pin.split('').map(char => (
+                        <span class="w-24 h-32 bg-zinc-800 flex items-center justify-center text-7xl font-black text-white rounded-2xl border border-zinc-700">
+                        {char}
+                    </span>
+                ))}
+            </div>
+        </div>
+
+        <div class="text-xl font-bold italic animate-pulse">
+            Esperando a los estudiantes...
+        </div>
+    </div>
+</DashboardLayout>
+
+<script is:inline define:vars={{ round }}>
+    // 1. Elementos de la UI
+    const grid = document.getElementById('players-grid');
+    const countEl = document.getElementById('player-count');
+
+    // 2. Escuchar cambios en la tabla event_players
+    // Solo nos interesan los que entren a ESTE evento y ESTE grupo
+    const channel = window.supabase
+        .channel('lobby_room')
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'event_players',
+                filter: `event_id=eq.${round.event_id}`
+            },
+            async (payload) => {
+                // Verificamos que sea de nuestro grupo (filtro manual)
+                if (payload.new.classroom_group_id === round.classroom_group_id) {
+
+                    // Buscamos el nombre del alumno para mostrarlo
+                    const { data: player } = await window.supabase
+                        .from('players')
+                        .select('name')
+                        .eq('id', payload.new.player_id)
+                        .single();
+
+                    if (player) {
+                        // Añadir a la cuadrícula con una animación de entrada
+                        const div = document.createElement('div');
+                        div.className = "bg-white p-4 rounded-2xl border-2 border-primary shadow-lg animate-bounce text-center";
+                        div.innerHTML = `<p class="font-black text-primary uppercase text-xs truncate">${player.name}</p>`;
+                        grid.appendChild(div);
+
+                        // Actualizar contador
+                        const currentCount = parseInt(countEl.innerText);
+                        countEl.innerText = currentCount + 1;
+                    }
+                }
+            }
+        )
+        .subscribe();
+</script>

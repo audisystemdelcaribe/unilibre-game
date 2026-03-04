@@ -1,71 +1,40 @@
 ---
-// src/pages/dashboard/eventos/[id]/lanzar.astro
-import DashboardLayout from "../../../layouts/DashboardLayout.astro";
+import DashboardLayout from "@/layouts/DashboardLayout.astro";
 import { actions } from "astro:actions";
-import { Icon } from 'astro-icon/components';
-import FormButton from "../../../components/FormButton.astro";
+import FormButton from "@/components/FormButton.astro";
 
-const { id } = Astro.params;
+const { id } = Astro.params; // Este es el event_id
 const result = Astro.getActionResult(actions.openClassroomSession);
 
-// Obtener detalles del evento maestro
+// Si la acción fue exitosa, el servidor nos devuelve el nuevo round_id
+if (result?.data?.success) {
+    return Astro.redirect(`/dashboard/eventos/control/${result.data.round_id}`);
+}
+
 const { data: event } = await Astro.locals.supabase
     .from('events')
-    .select('*, game_modes(name)')
+    .select('name')
     .eq('id', id)
     .single();
-
-// Si la acción tuvo éxito, redirigimos al Lobby del salón (que haremos después)
-if (result?.data?.success) {
-    return Astro.redirect(`/dashboard/eventos/lobby/${result.data.round_id}`);
-}
 ---
 
-<DashboardLayout title="Abrir Salón" actionResult={result}>
-    <div class="max-w-2xl mx-auto">
-        <a href="/dashboard/eventos" class="btn btn-ghost btn-sm gap-2 mb-8">
-            <Icon name="lucide:arrow-left" class="w-4 h-4" /> Volver a Eventos
-        </a>
+<DashboardLayout title="Preparar Salón">
+    <div class="max-w-xl mx-auto mt-10">
+        <div class="card bg-white border border-base-300 shadow-xl p-8 text-center">
+            <h2 class="text-slate-400 font-bold uppercase text-xs mb-2">Preparando sesión para:</h2>
+            <h1 class="text-3xl font-black uppercase italic mb-8">{event?.name}</h1>
 
-        <div class="card bg-white border border-base-300 shadow-xl overflow-hidden">
-            <div class="bg-slate-900 p-8 text-white">
-                <div class="badge badge-secondary font-black mb-2 uppercase">{event?.game_modes?.name}</div>
-                <h2 class="text-3xl font-black italic tracking-tighter uppercase">{event?.name}</h2>
-                <p class="text-slate-400 text-sm mt-2">{event?.description}</p>
-            </div>
-
-            <form method="POST" action={actions.openClassroomSession} class="p-8 space-y-6">
+            <form method="POST" action={actions.openClassroomSession} class="space-y-6">
                 <input type="hidden" name="event_id" value={id} />
 
-                <div class="form-control">
-                    <label class="label">
-                        <span class="label-text font-black text-xs uppercase text-slate-500">Nombre de tu Salón / Grupo</span>
-                    </label>
-                    <input
-                            name="classroom_group_id"
-                            type="text"
-                            required
-                            placeholder="Ej: Contaduría 5-A, Sistemas Nocturno..."
-                            class="input input-bordered input-lg font-bold bg-base-200 focus:input-primary"
-                    />
-                    <label class="label">
-                        <span class="label-text-alt italic">Este nombre identificará a tus alumnos en el ranking.</span>
-                    </label>
+                <div class="form-control text-left">
+                    <label class="label font-bold uppercase text-[10px] text-slate-500">Nombre de tu Grupo / Salón</label>
+                    <input name="classroom_group_id" required type="text" placeholder="Ej: Sistemas 3-A" class="input input-bordered input-lg bg-base-200" />
                 </div>
 
-                <div class="bg-blue-50 border border-blue-100 p-4 rounded-2xl flex gap-4 items-start">
-                    <Icon name="lucide:info" class="w-6 h-6 text-blue-500 shrink-0" />
-                    <p class="text-xs text-blue-700 leading-relaxed">
-                        Al presionar el botón, el sistema generará un <strong>PIN de acceso único</strong>.
-                        Tus estudiantes deberán ingresar ese código en su aplicación para unirse a tu salón específicamente.
-                    </p>
-                </div>
-
-                <div class="pt-4">
-                    <FormButton class="btn-primary btn-lg w-full text-white font-black uppercase italic tracking-widest shadow-lg">
-                        Generar PIN y Abrir Salón
-                    </FormButton>
-                </div>
+                <FormButton class="btn-primary btn-lg w-full text-white font-black italic uppercase">
+                    Generar PIN y Abrir Sala
+                </FormButton>
             </form>
         </div>
     </div>

@@ -200,6 +200,7 @@ const { data: sequences } = await Astro.locals.supabase
     //eliminar
     document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', () => {
+
             console.log("Botón eliminar presionado"); // Si ves esto en F12, el botón funciona
 
             const id = btn.getAttribute('data-id');

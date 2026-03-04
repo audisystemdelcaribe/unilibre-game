@@ -1,0 +1,94 @@
+---
+import "../styles/global.css";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import FormButton from "../components/FormButton.astro";
+import Toast from "../components/Toast.astro";
+
+// 1. Capturar resultado del registro
+const result = Astro.getActionResult(actions.registerPlayer);
+
+// 2. Cargar programas para el select
+const { data: programs } = await Astro.locals.supabase
+    .from('programs')
+    .select('id, name')
+    .order('name', { ascending: true });
+
+// Lógica de Toast manual para esta página (ya que no usa el DashboardLayout)
+let toastInfo = null;
+if (result?.data?.success) toastInfo = { type: 'success', message: result.data.message };
+if (result?.error) toastInfo = { type: 'error', message: result.error.message };
+---
+
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>Registro Estudiantil - Unilibre Game</title>
+</head>
+<body class="bg-zinc-950 text-white flex min-h-screen items-center justify-center p-4">
+
+{toastInfo && <Toast type={toastInfo.type as any} message={toastInfo.message} />}
+
+<div class="w-full max-w-lg">
+    <div class="text-center mb-8">
+        <h1 class="text-4xl font-black italic tracking-tighter text-white">
+            NUEVO <span class="text-secondary">JUGADOR</span>
+        </h1>
+        <p class="text-zinc-500 text-sm mt-2 uppercase font-bold tracking-widest">Únete a la carrera del saber</p>
+    </div>
+
+    <form method="POST" action={actions.registerPlayer} class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl space-y-5">
+
+        <div class="form-control">
+            <label class="label"><span class="label-text font-bold text-zinc-400 uppercase text-[10px]">Nombre Completo</span></label>
+            <input name="full_name" type="text" required class="input input-bordered bg-zinc-800 border-zinc-700" placeholder="Ej: Pedro Pérez" />
+        </div>
+
+        <div class="form-control">
+            <label class="label"><span class="label-text font-bold text-zinc-400 uppercase text-[10px]">Correo Unilibre</span></label>
+            <input name="email" type="email" required class="input input-bordered bg-zinc-800 border-zinc-700" placeholder="usuario@unilibre.edu.co" />
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="form-control">
+                <label class="label"><span class="label-text font-bold text-zinc-400 uppercase text-[10px]">Programa</span></label>
+                <select name="program_id" required class="select select-bordered bg-zinc-800 border-zinc-700">
+                    <option value="" disabled selected>Selecciona...</option>
+                    {programs?.map(p => <option value={p.id}>{p.name}</option>)}
+                </select>
+            </div>
+            <div class="form-control">
+                <label class="label"><span class="label-text font-bold text-zinc-400 uppercase text-[10px]">Semestre Actual</span></label>
+                <input name="semester" type="number" min="1" max="12" required class="input input-bordered bg-zinc-800 border-zinc-700" placeholder="1-12" />
+            </div>
+        </div>
+
+        <div class="form-control">
+            <label class="label"><span class="label-text font-bold text-zinc-400 uppercase text-[10px]">Contraseña</span></label>
+            <input name="password" type="password" required minlength="6" class="input input-bordered bg-zinc-800 border-zinc-700" />
+        </div>
+
+        <div class="pt-4 space-y-4">
+            <FormButton class="btn-secondary btn-lg w-full text-white font-black uppercase italic tracking-widest shadow-lg">
+                CREAR CUENTA
+            </FormButton>
+
+            <p class="text-center text-xs text-zinc-500">
+                ¿Ya tienes cuenta? <a href="/" class="text-white font-bold hover:underline">Inicia sesión aquí</a>
+            </p>
+        </div>
+    </form>
+</div>
+
+<script is:inline>
+    // Función de desbloqueo de botones por si falla el registro
+    window.unlockButtons = () => {
+        document.querySelectorAll('button[type="submit"]').forEach(btn => {
+            btn.removeAttribute('disabled');
+            btn.classList.remove('is-loading');
+        });
+    };
+</script>
+</body>
+</html>

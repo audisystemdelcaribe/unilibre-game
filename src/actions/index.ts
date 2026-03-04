@@ -9,6 +9,8 @@ import {gameModesActions} from './modules/game_modes';
 import { questionsActions } from './modules/questions.ts'
 import { fastestFingerActions } from './modules/fastest_finger';
 import { eventsActions } from './modules/events';
+import { liveSessionsActions } from './modules/live_sessions';
+import { authActions } from './modules/auth';
 
 export const server = {
     ...facultiesActions,
@@ -22,4 +24,6 @@ export const server = {
     ...questionsActions,
     ...fastestFingerActions,
     ...eventsActions,
+    ...liveSessionsActions,
+    ...authActions
 };

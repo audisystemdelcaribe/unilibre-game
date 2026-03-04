@@ -1,9 +1,9 @@
 ---
-import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import DashboardLayout from "@/layouts/DashboardLayout.astro";
 import { actions } from "astro:actions";
 import { Icon } from 'astro-icon/components';
-import DeleteModal from "../../components/DeleteModal.astro";
-import FormButton from "../../components/FormButton.astro";
+import DeleteModal from "@/components/DeleteModal.astro";
+import FormButton from "@/components/FormButton.astro";
 
 // Capturamos el resultado para el Toast global
 const result = Astro.getActionResult(actions.saveEvent) || Astro.getActionResult(actions.deleteEvent);
@@ -73,9 +73,10 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
                                     <Icon name="lucide:trash-2" size={16} />
                                 </button>
                             </div>
-                            <a href={`/dashboard/eventos/${e.id}/control`} class="btn btn-primary text-white font-black italic uppercase tracking-widest text-xs px-6 shadow-md hover:scale-105 transition-transform">
+                            <a href={`/dashboard/eventos/${e.id}/lanzar`} class="btn btn-primary text-white font-black italic uppercase text-xs px-6 shadow-md">
                                 Lanzar Panel de Control
                             </a>
+
                         </div>
                     </div>
                 </div>
