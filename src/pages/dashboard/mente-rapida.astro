@@ -1,0 +1,197 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import FormButton from "../../components/FormButton.astro";
+
+const result = Astro.getActionResult(actions.saveSequence) || Astro.getActionResult(actions.deleteSequence);
+
+const { data: sequences } = await Astro.locals.supabase
+    .from('fastest_finger_sequences')
+    .select('*, fastest_finger_items(*)')
+    .order('created_at', { ascending: false });
+---
+
+<DashboardLayout title="Mente más Rápida" actionResult={result}>
+    <div class="flex justify-between items-center mb-10">
+        <div>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase text-slate-800 flex items-center gap-3">
+                <Icon name="lucide:zap" class="text-yellow-500" /> Mente más Rápida
+            </h2>
+            <p class="text-slate-500 font-medium">Retos de ordenamiento variable</p>
+        </div>
+        <button id="btn-nueva" class="btn btn-primary text-white font-bold px-8 shadow-lg">
+            + Nuevo Reto
+        </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {sequences?.map((s) => (
+                <div class="card bg-white border border-base-300 shadow-sm hover:shadow-md transition-all group overflow-hidden">
+                    <div class="p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <h3 class="font-black text-xl text-slate-800 uppercase italic leading-tight flex-1">{s.title}</h3>
+                            <div class="flex gap-1">
+                                <button class="btn btn-ghost btn-sm text-primary btn-edit"
+                                        data-id={s.id}
+                                        data-title={s.title}
+                                        data-items={JSON.stringify(s.fastest_finger_items)}>
+                                    <Icon name="lucide:pencil" class="w-4 h-4" />
+                                </button>
+                                <button class="btn btn-ghost btn-sm text-error btn-delete"
+                                        data-id={s.id}
+                                        data-title={s.title}>
+                                    <Icon name="lucide:trash-2" class="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2 mt-4">
+                            {s.fastest_finger_items.sort((a,b) => a.correct_position - b.correct_position).map((item, idx) => (
+                                    <div class="flex items-center gap-3 bg-base-200 p-2 rounded-xl text-xs font-bold text-slate-600 border border-base-300">
+                                        <span class="w-6 h-6 rounded-lg bg-zinc-800 text-white flex items-center justify-center shrink-0">{idx + 1}</span>
+                                        <span class="truncate">{item.text}</span>
+                                    </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+        ))}
+    </div>
+
+    <!-- MODAL DINÁMICO -->
+    <dialog id="modal_sequence" class="modal">
+        <div class="modal-box max-w-lg border border-base-300 p-0 overflow-visible bg-base-100">
+            <div class="bg-zinc-900 p-6 text-white flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <Icon name="lucide:zap" class="text-yellow-500" />
+                    <h3 id="modal_title" class="font-black text-2xl italic uppercase tracking-tighter">Configurar Reto</h3>
+                </div>
+                <button class="btn btn-sm btn-circle btn-ghost" onclick="modal_sequence.close()">✕</button>
+            </div>
+
+            <form method="POST" action={actions.saveSequence} id="form-seq" class="p-8 space-y-6">
+                <input type="hidden" name="id" id="f_id" />
+                <input type="hidden" name="items_json" id="f_items_json" />
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Instrucción del Reto</span></label>
+                    <input name="title" id="f_title" type="text" required class="input input-bordered w-full font-bold" placeholder="Ej: Ordene por población de mayor a menor" />
+                </div>
+
+                <div class="space-y-3">
+                    <div class="flex justify-between items-end">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-yellow-600">Elementos (En orden correcto)</span></label>
+                        <button type="button" id="add-item-btn" class="btn btn-xs btn-outline btn-warning gap-1">
+                            <Icon name="lucide:plus" size={12} /> Añadir Ítem
+                        </button>
+                    </div>
+
+                    <!-- CONTENEDOR DINÁMICO DE FILAS -->
+                    <div id="items-container" class="space-y-3">
+                        <!-- Las filas se insertan aquí vía JS -->
+                    </div>
+                </div>
+
+                <div class="modal-action border-t border-base-300 pt-6">
+                    <button type="button" onclick="modal_sequence.close()" class="btn btn-ghost px-8">Cancelar</button>
+                    <FormButton id="btn-save-seq" class="btn-neutral bg-zinc-900 text-white flex-1 font-black shadow-lg italic">
+                        Guardar Reto
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <DeleteModal id="modal_delete" action={actions.deleteSequence} />
+</DashboardLayout>
+
+<script>
+    const modal = document.getElementById('modal_sequence') as any;
+    const form = document.getElementById('form-seq') as HTMLFormElement;
+    const itemsContainer = document.getElementById('items-container') as HTMLElement;
+    const addItemBtn = document.getElementById('add-item-btn');
+
+    // --- FUNCIÓN PARA CREAR UNA FILA ---
+    function createItemRow(value = '') {
+        const div = document.createElement('div');
+        div.className = "flex items-center gap-2 group item-row";
+        div.innerHTML = `
+            <div class="flex-none w-8 h-8 rounded-full bg-zinc-200 text-zinc-500 flex items-center justify-center font-black text-xs row-number">0</div>
+            <input type="text" required class="input input-bordered input-sm flex-1 font-bold item-input" value="${value}" placeholder="Escribir elemento..." />
+            <button type="button" class="btn btn-sm btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity remove-row-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </button>
+        `;
+
+        // Lógica para borrar fila
+        div.querySelector('.remove-row-btn')?.addEventListener('click', () => {
+            if (document.querySelectorAll('.item-row').length > 2) {
+                div.remove();
+                updateNumbers();
+            } else {
+                alert("Debes tener al menos 2 elementos.");
+            }
+        });
+
+        itemsContainer.appendChild(div);
+        updateNumbers();
+    }
+
+    function updateNumbers() {
+        document.querySelectorAll('.row-number').forEach((el, i) => {
+            el.textContent = (i + 1).toString();
+        });
+    }
+
+    // --- EVENTOS ---
+    addItemBtn?.addEventListener('click', () => createItemRow());
+
+    form.addEventListener('submit', (e) => {
+        const inputs = document.querySelectorAll('.item-input') as NodeListOf<HTMLInputElement>;
+        const items = Array.from(inputs).map(i => i.value.trim()).filter(v => v !== '');
+
+        if (items.length < 2) {
+            e.preventDefault();
+            alert("Agrega al menos 2 ítems.");
+            if (window.unlockButtons) window.unlockButtons();
+            return;
+        }
+
+        (document.getElementById('f_items_json') as HTMLInputElement).value = JSON.stringify(items);
+    });
+
+    // NUEVO
+    document.getElementById('btn-nueva')?.addEventListener('click', () => {
+        form.reset();
+        itemsContainer.innerHTML = '';
+        (document.getElementById('f_id') as HTMLInputElement).value = '';
+        createItemRow(); createItemRow(); createItemRow(); createItemRow(); // 4 por defecto
+        (document.getElementById('modal_title') as HTMLElement).innerText = 'NUEVO RETO';
+        modal.showModal();
+    });
+
+    // EDITAR
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            form.reset();
+            itemsContainer.innerHTML = '';
+
+            const id = btn.getAttribute('data-id');
+            const title = btn.getAttribute('data-title');
+            const items = JSON.parse(btn.getAttribute('data-items') || '[]')
+                .sort((a:any, b:any) => a.correct_position - b.correct_position);
+
+            (document.getElementById('f_id') as HTMLInputElement).value = id || '';
+            (document.getElementById('f_title') as HTMLInputElement).value = title || '';
+
+            items.forEach((it: any) => createItemRow(it.text));
+
+            (document.getElementById('modal_title') as HTMLElement).innerText = 'EDITAR RETO';
+            modal.showModal();
+        });
+    });
+
+    if (window.unlockButtons) window.unlockButtons();
+</script>

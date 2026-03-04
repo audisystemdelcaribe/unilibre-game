@@ -1,0 +1,364 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import FormButton from "../../components/FormButton.astro";
+
+const result = Astro.getActionResult(actions.saveQuestion) || Astro.getActionResult(actions.deleteQuestion);
+
+// --- LÓGICA DE FILTROS, BÚSQUEDA Y PAGINACIÓN ---
+const url = new URL(Astro.request.url);
+const search = url.searchParams.get('search') || '';
+const fSubject = url.searchParams.get('fSubject') || '';
+const fLevel = url.searchParams.get('fLevel') || '';
+const page = parseInt(url.searchParams.get('page') || '1');
+const pageSize = 10;
+const from = (page - 1) * pageSize;
+const to = from + pageSize - 1;
+
+// 1. Construir consulta dinámica
+let query = Astro.locals.supabase
+    .from('questions')
+    .select('*, subjects(name), game_levels(name, money_value), answers(*)', { count: 'exact' });
+
+// Aplicar filtros si existen
+if (search) query = query.ilike('question_text', `%${search}%`);
+if (fSubject) query = query.eq('subject_id', fSubject);
+if (fLevel) query = query.eq('level_id', fLevel);
+
+const { data: questions, count, error: qError } = await query
+    .order('id', { ascending: false })
+    .range(from, to);
+
+if (qError) console.error("Error cargando preguntas:", qError);
+
+const totalPages = Math.ceil((count || 0) / pageSize);
+
+// 2. Datos para los selectores (Filtros y Modal)
+const { data: faculties } = await Astro.locals.supabase.from('faculties').select('id, name').order('name');
+const { data: allPrograms } = await Astro.locals.supabase.from('programs').select('id, name, faculty_id').order('name');
+const { data: levels } = await Astro.locals.supabase.from('game_levels').select('id, name, money_value').order('difficulty_order');
+const { data: subjectMappings } = await Astro.locals.supabase.from('program_subjects').select('program_id, subject_id, subjects(name)');
+const { data: allSubjects } = await Astro.locals.supabase.from('subjects').select('id, name').order('name');
+---
+
+<DashboardLayout title="Banco de Preguntas" actionResult={result}>
+    <div class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+        <div>
+            <h2 class="text-4xl font-black italic uppercase text-slate-800">Trivia Bank</h2>
+            <p class="text-slate-500 font-medium">Gestión integral de conocimiento ({count || 0} total)</p>
+        </div>
+        <button id="btn-nueva" class="btn btn-primary text-white font-bold px-8 shadow-lg shadow-primary/20">
+            <Icon name="lucide:plus-circle" class="w-5 h-5" /> Nueva Pregunta
+        </button>
+    </div>
+
+    <!-- BARRA DE FILTROS REALTIME (Vía GET) -->
+    <form method="GET" class="grid grid-cols-1 md:grid-cols-12 gap-3 mb-8 bg-white p-4 rounded-3xl border border-base-300 shadow-sm">
+        <div class="md:col-span-5 relative">
+            <Icon name="lucide:search" class="absolute left-3 top-3 text-slate-400" />
+            <input name="search" value={search} type="text" placeholder="Buscar por enunciado..." class="input input-bordered w-full pl-10 bg-base-200/50" />
+        </div>
+        <div class="md:col-span-3">
+            <select name="fSubject" class="select select-bordered w-full font-bold text-xs uppercase">
+                <option value="">Todas las Materias</option>
+                {allSubjects?.map(s => <option value={s.id} selected={fSubject === String(s.id)}>{s.name}</option>)}
+            </select>
+        </div>
+        <div class="md:col-span-2">
+            <select name="fLevel" class="select select-bordered w-full font-bold text-xs uppercase">
+                <option value="">Todos los Niveles</option>
+                {levels?.map(l => <option value={l.id} selected={fLevel === String(l.id)}>{l.name}</option>)}
+            </select>
+        </div>
+        <div class="md:col-span-2 flex gap-1">
+            <button type="submit" class="btn btn-primary flex-1 text-white"><Icon name="lucide:filter" class="w-4 h-4" /></button>
+            <a href="/dashboard/preguntas" class="btn btn-ghost border border-base-300"><Icon name="lucide:rotate-ccw" class="w-4 h-4" /></a>
+        </div>
+    </form>
+
+    <!-- LISTADO DE PREGUNTAS -->
+    <div class="grid grid-cols-1 gap-4 mb-10">
+        {questions && questions.length > 0 ? (
+            questions.map((q) => (
+                    <div class="card bg-white border border-base-300 shadow-sm hover:border-primary/40 transition-all group p-6 flex flex-col md:flex-row justify-between gap-6">
+                        <div class="flex-1">
+                            <div class="flex flex-wrap gap-2 mb-3">
+                                <div class="badge badge-sm bg-slate-100 text-slate-500 border-none font-bold uppercase text-[9px]">{q.subjects?.name}</div>
+                                <div class="badge badge-sm bg-blue-100 text-blue-600 border-none font-bold uppercase text-[9px]">{q.game_levels?.name}</div>
+                                <div class="badge badge-sm bg-secondary/10 text-secondary border-none font-bold uppercase text-[9px]">{q.scope}</div>
+                                <div class="badge badge-sm bg-zinc-800 text-white border-none font-bold text-[9px]">Sem: {q.min_semester}-{q.max_semester}</div>
+                            </div>
+                            <h3 class="text-lg font-bold text-slate-800 leading-snug">{q.question_text}</h3>
+
+                            <!-- Visualización de respuestas correcta -->
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-4">
+                                {q.answers.map((a: any) => (
+                                        <div class:list={["text-[11px] p-2 rounded-xl border flex items-center gap-2", a.is_correct ? "bg-success/10 border-success text-success font-bold" : "bg-slate-50 border-slate-200 text-slate-400"]}>
+                                            <span class="w-2 h-2 rounded-full bg-current"></span>
+                                            {a.answer_text}
+                                        </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div class="flex md:flex-col justify-end gap-2 border-t md:border-t-0 md:border-l border-base-100 pt-4 md:pt-0 md:pl-6">
+                            <button class="btn btn-ghost btn-sm text-primary btn-edit"
+                                    data-id={q.id}
+                                    data-text={q.question_text}
+                                    data-sub={q.subject_id}
+                                    data-lvl={q.level_id}
+                                    data-scope={q.scope}
+                                    data-fac={q.faculty_id}
+                                    data-prog={q.program_id}
+                                    data-min={q.min_semester}
+                                    data-max={q.max_semester}
+                                    data-answers={JSON.stringify(q.answers)}
+                            >
+                                <Icon name="lucide:pencil" class="w-4 h-4" />
+                            </button>
+                            <button class="btn btn-ghost btn-sm text-error btn-delete" data-id={q.id} data-text={q.question_text}>
+                                <Icon name="lucide:trash-2" class="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+            ))
+        ) : (
+                <div class="py-20 text-center bg-white rounded-3xl border-2 border-dashed border-base-300">
+                    <p class="text-slate-400 italic">No se encontraron preguntas con los filtros seleccionados.</p>
+                </div>
+        )}
+    </div>
+
+    <!-- PAGINACIÓN DINÁMICA -->
+    {totalPages > 1 && (
+            <div class="flex justify-center mb-10">
+                <div class="join shadow-sm bg-white border border-base-300">
+                    <a href={`?page=${page - 1}&search=${search}&fSubject=${fSubject}&fLevel=${fLevel}`}
+                       class:list={["join-item btn btn-sm", page <= 1 && "btn-disabled"]}>«</a>
+
+                    {Array.from({length: totalPages}, (_, i) => i + 1).map(p => (
+                            <a href={`?page=${p}&search=${search}&fSubject=${fSubject}&fLevel=${fLevel}`}
+                               class:list={["join-item btn btn-sm", page === p ? "btn-primary text-white" : "btn-ghost"]}>
+                                {p}
+                            </a>
+                    ))}
+
+                    <a href={`?page=${page + 1}&search=${search}&fSubject=${fSubject}&fLevel=${fLevel}`}
+                       class:list={["join-item btn btn-sm", page >= totalPages && "btn-disabled"]}>»</a>
+                </div>
+            </div>
+    )}
+    <!-- MODAL DE PREGUNTA -->
+    <dialog id="modal_question" class="modal">
+        <div class="modal-box max-w-4xl p-0 overflow-visible bg-base-100 border border-base-300">
+            <div class="bg-primary p-6 text-white font-black text-2xl italic uppercase tracking-tighter">
+                <span id="modal_title">Gestionar Pregunta</span>
+            </div>
+
+            <form method="POST" action={actions.saveQuestion} id="form-q" class="p-8 space-y-6">
+                <input type="hidden" name="id" id="f_id" />
+
+                <!-- FILTROS EN CASCADA -->
+                <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-primary">1. Ámbito</span></label>
+                        <select name="scope" id="f_scope" required class="select select-bordered bg-white">
+                            <option value="global">Global</option>
+                            <option value="faculty">Facultad</option>
+                            <option value="program">Programa</option>
+                        </select>
+                    </div>
+
+                    <div class="form-control" id="cont_fac">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-primary">2. Facultad</span></label>
+                        <select name="faculty_id" id="f_fac" class="select select-bordered bg-white">
+                            <option value="">Elegir Facultad...</option>
+                            {faculties?.map(f => <option value={f.id}>{f.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div class="form-control" id="cont_prog">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-primary">3. Programa</span></label>
+                        <select name="program_id" id="f_prog" class="select select-bordered bg-white">
+                            <option value="">Elegir Programa...</option>
+                            {allPrograms?.map(p => <option value={p.id} data-faculty-id={p.faculty_id}>{p.name}</option>)}
+                        </select>
+                    </div>
+
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-primary">4. Asignatura</span></label>
+                        <select name="subject_id" id="f_sub" required class="select select-bordered bg-white">
+                            <option value="">Elegir Materia...</option>
+                            {subjectMappings?.map(m => (
+                                    <option value={m.subject_id} data-program-id={m.program_id} class="hidden">
+                                        {m.subjects?.name}
+                                    </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- NIVEL Y SEMESTRE -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase">Nivel / Premio</span></label>
+                        <select name="level_id" id="f_lvl" required class="select select-bordered bg-base-200">
+                            {levels?.map(l => <option value={l.id}>{l.name} (${l.money_value})</option>)}
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Semestre Min.</span></label>
+                        <input type="number" name="min_semester" id="f_min" min="1" max="12" value="1" required class="input input-bordered" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Semestre Max.</span></label>
+                        <input type="number" name="max_semester" id="f_max" min="1" max="12" value="10" required class="input input-bordered" />
+                    </div>
+                </div>
+
+                <!-- PREGUNTA Y RESPUESTAS -->
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-[10px] uppercase text-primary">Pregunta</span></label>
+                    <textarea name="question_text" id="f_text" required class="textarea textarea-bordered h-24 w-full font-bold text-lg" placeholder="¿...?"></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {[1,2,3,4].map(n => (
+                            <div class="flex items-center gap-3 bg-base-200 p-4 rounded-2xl border border-base-300">
+                                <input type="radio" name="correct_idx" value={n} class="radio radio-success" required id={`rad_${n}`} />
+                                <input type="text" name={`ans_${n}`} id={`ans_${n}`} required class="input input-ghost w-full font-bold" placeholder={`Opción ${n}`} />
+                            </div>
+                    ))}
+                </div>
+
+                <div class="modal-action border-t border-base-300 pt-6 px-8 pb-8">
+                    <button type="button" onclick="modal_question.close()" class="btn btn-ghost px-10">Cancelar</button>
+                    <FormButton class="btn-primary text-white flex-1 font-black shadow-lg uppercase italic tracking-widest">Guardar Pregunta</FormButton>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <DeleteModal id="modal_delete" action={actions.deleteQuestion} />
+</DashboardLayout>
+
+<script>
+    const modal = document.getElementById('modal_question') as any;
+    const form = document.getElementById('form-q') as HTMLFormElement;
+    const scopeSelect = document.getElementById('f_scope') as HTMLSelectElement;
+    const facSelect = document.getElementById('f_fac') as HTMLSelectElement;
+    const progSelect = document.getElementById('f_prog') as HTMLSelectElement;
+    const subSelect = document.getElementById('f_sub') as HTMLSelectElement;
+
+    // --- REUTILIZABLE: FILTRAR VISTA ---
+    function filterCascade(parentId: string, childSelect: HTMLSelectElement, dataAttr: string) {
+        let count = 0;
+        childSelect.querySelectorAll('option').forEach(opt => {
+            if (opt.value === "") return;
+            const match = opt.getAttribute(dataAttr) === parentId;
+            opt.classList.toggle('hidden', !match);
+            if (match) count++;
+        });
+        if (count > 0) childSelect.value = "";
+    }
+
+    // --- LOGICA DE VISIBILIDAD DE FILTROS ---
+    scopeSelect.addEventListener('change', () => {
+        const val = scopeSelect.value;
+        document.getElementById('cont_fac')?.classList.toggle('hidden', val === 'global');
+        document.getElementById('cont_prog')?.classList.toggle('hidden', val !== 'program');
+
+        facSelect.required = (val !== 'global');
+        progSelect.required = (val === 'program');
+    });
+
+    // --- DISPARADORES DE CASCADA ---
+    facSelect.addEventListener('change', () => filterCascade(facSelect.value, progSelect, 'data-faculty-id'));
+    progSelect.addEventListener('change', () => filterCascade(progSelect.value, subSelect, 'data-program-id'));
+
+    // --- NUEVA PREGUNTA ---
+    document.getElementById('btn-nueva')?.addEventListener('click', () => {
+        form.reset();
+        (document.getElementById('f_id') as HTMLInputElement).value = '';
+        scopeSelect.dispatchEvent(new Event('change'));
+        modal.showModal();
+    });
+
+    // --- EDITAR PREGUNTA ---
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            console.log("Iniciando edición...");
+            form.reset();
+
+            try {
+                const id = btn.getAttribute('data-id');
+                const subId = btn.getAttribute('data-sub');
+                const scope = btn.getAttribute('data-scope');
+                const facId = btn.getAttribute('data-fac');
+                const progId = btn.getAttribute('data-prog');
+                const min = btn.getAttribute('data-min');
+                const max = btn.getAttribute('data-max');
+
+                // PROTECCIÓN: Verificamos el JSON de respuestas
+                const answersRaw = btn.getAttribute('data-answers');
+                if (!answersRaw) throw new Error("No se encontraron respuestas en el atributo data-answers");
+
+                const answers = JSON.parse(answersRaw);
+
+                // Llenar campos básicos
+                (document.getElementById('f_id') as HTMLInputElement).value = id || '';
+                (document.getElementById('f_text') as HTMLTextAreaElement).value = btn.getAttribute('data-text') || '';
+                (document.getElementById('f_lvl') as HTMLSelectElement).value = btn.getAttribute('data-lvl') || '';
+                (document.getElementById('f_min') as HTMLInputElement).value = min || '1';
+                (document.getElementById('f_max') as HTMLInputElement).value = max || '10';
+
+                // Sincronizar UI
+                scopeSelect.value = scope || 'global';
+                // Disparamos el evento manualmente para ocultar/mostrar campos de fac/prog
+                scopeSelect.dispatchEvent(new Event('change'));
+
+                if (facId) {
+                    facSelect.value = facId;
+                    filterCascade(facId, progSelect, 'data-faculty-id');
+                }
+                if (progId) {
+                    progSelect.value = progId;
+                    filterCascade(progId, subSelect, 'data-program-id');
+                }
+                subSelect.value = subId || '';
+
+                // Llenar las 4 respuestas
+                answers.forEach((ans: any, i: number) => {
+                    const n = i + 1;
+                    const inputAns = document.getElementById(`ans_${n}`) as HTMLInputElement;
+                    const inputRad = document.getElementById(`rad_${n}`) as HTMLInputElement;
+
+                    if (inputAns) inputAns.value = ans.answer_text;
+                    if (inputRad && ans.is_correct) inputRad.checked = true;
+                });
+
+                document.getElementById('modal_title')!.innerText = 'EDITAR PREGUNTA';
+                modal.showModal();
+
+            } catch (err) {
+                console.error("Error crítico al procesar la edición:", err);
+                alert("Error al cargar los datos de esta pregunta. Revisa la consola (F12).");
+            }
+        });
+    });
+
+    // ELIMINAR
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const text = btn.getAttribute('data-text');
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar pregunta: <strong>"${text}"</strong>?`;
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+
+    if (window.unlockButtons) window.unlockButtons();
+</script>

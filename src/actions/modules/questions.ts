@@ -1,0 +1,83 @@
+import { defineAction } from 'astro:actions';
+import { z } from 'astro:schema';
+import { supabaseAdmin } from '../../lib/supabaseAdmin';
+import { ensureAdmin } from '../utils';
+
+export const questionsActions = {
+    saveQuestion: defineAction({
+        accept: 'form',
+        input: z.object({
+            id: z.string().optional(),
+            subject_id: z.string(),
+            level_id: z.string(),
+            question_text: z.string().min(5),
+            scope: z.string(),
+            faculty_id: z.string().optional().nullable(),
+            program_id: z.string().optional().nullable(),
+            min_semester: z.string().default("1"),
+            max_semester: z.string().default("10"),
+            ans_1: z.string(), ans_2: z.string(), ans_3: z.string(), ans_4: z.string(),
+            correct_idx: z.string(),
+        }),
+        handler: async (input, context) => {
+            await ensureAdmin(context);
+
+            const { id, subject_id, level_id, question_text, scope, faculty_id, program_id, min_semester, max_semester, ans_1, ans_2, ans_3, ans_4, correct_idx } = input;
+
+            // Limpieza de IDs según el Scope para mantener la integridad de la DB
+            let final_faculty = null;
+            let final_program = null;
+
+            if (scope === 'faculty') {
+                final_faculty = parseInt(faculty_id!);
+            } else if (scope === 'program') {
+                final_program = parseInt(program_id!);
+                final_faculty = faculty_id ? parseInt(faculty_id) : null;
+            }
+
+            const questionData = {
+                subject_id: parseInt(subject_id),
+                level_id: parseInt(level_id),
+                question_text,
+                scope,
+                faculty_id: final_faculty,
+                program_id: final_program,
+                min_semester: parseInt(min_semester),
+                max_semester: parseInt(max_semester)
+            };
+
+            let qId: number;
+            if (id && id !== "") {
+                qId = parseInt(id);
+                const { error } = await supabaseAdmin.from('questions').update(questionData).eq('id', qId);
+                if (error) throw new Error(error.message);
+            } else {
+                const { data, error } = await supabaseAdmin.from('questions').insert([questionData]).select().single();
+                if (error) throw new Error(error.message);
+                qId = data.id;
+            }
+
+            // Sincronizar Respuestas
+            await supabaseAdmin.from('answers').delete().eq('question_id', qId);
+            await supabaseAdmin.from('answers').insert([
+                { question_id: qId, answer_text: ans_1, is_correct: correct_idx === "1" },
+                { question_id: qId, answer_text: ans_2, is_correct: correct_idx === "2" },
+                { question_id: qId, answer_text: ans_3, is_correct: correct_idx === "3" },
+                { question_id: qId, answer_text: ans_4, is_correct: correct_idx === "4" },
+            ]);
+
+            return { success: true, message: "Pregunta guardada exitosamente" };
+        }
+    }),
+
+    deleteQuestion: defineAction({
+        accept: 'form',
+        input: z.object({ id: z.string() }),
+        handler: async ({ id }, context) => {
+            await ensureAdmin(context);
+            const { error } = await supabaseAdmin.from('questions').delete().eq('id', parseInt(id));
+            if (error) throw new Error(error.message);
+            return { success: true, message: "Pregunta eliminada" };
+        }
+    })
+};

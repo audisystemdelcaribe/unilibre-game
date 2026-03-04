@@ -1,0 +1,135 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import FormButton from "../../components/FormButton.astro";
+
+const result = Astro.getActionResult(actions.saveGameMode) || Astro.getActionResult(actions.deleteGameMode);
+
+const { data: modes } = await Astro.locals.supabase
+    .from('game_modes')
+    .select('*')
+    .order('name', { ascending: true });
+---
+
+<DashboardLayout title="Modos de Juego" actionResult={result}>
+    <div class="flex justify-between items-center mb-10">
+        <div>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase text-slate-800 flex items-center gap-3">
+                <Icon name="lucide:settings-2" class="text-primary" /> Modos de Juego
+            </h2>
+            <p class="text-slate-500 font-medium">Configura las reglas y mecánicas de las partidas</p>
+        </div>
+        <button id="btn-nuevo-modo" class="btn btn-primary text-white font-bold px-8 shadow-lg">
+            <Icon name="lucide:plus" class="w-5 h-5" /> Nuevo Modo
+        </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {modes?.map((m) => (
+                <div class="card bg-white border border-base-300 shadow-sm hover:border-primary/30 transition-all group">
+                    <div class="p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="p-3 bg-primary/10 rounded-2xl text-primary">
+                                <Icon name="lucide:gamepad-2" class="w-6 h-6" />
+                            </div>
+                            <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button class="btn btn-ghost btn-sm text-primary btn-edit"
+                                        data-id={m.id}
+                                        data-name={m.name}
+                                        data-desc={m.description || ''}>
+                                    <Icon name="lucide:pencil" class="w-4 h-4" />
+                                </button>
+                                <button class="btn btn-ghost btn-sm text-error btn-delete"
+                                        data-id={m.id}
+                                        data-name={m.name}>
+                                    <Icon name="lucide:trash-2" class="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                        <h3 class="font-black text-xl text-slate-800 uppercase italic mb-2">{m.name}</h3>
+                        <p class="text-sm text-slate-500 min-h-[60px]">
+                            {m.description || 'Sin descripción de reglas.'}
+                        </p>
+                    </div>
+                    <div class="px-6 py-4 bg-base-50 border-t border-base-200 flex justify-between items-center">
+                        <span class="text-[10px] font-bold text-slate-400">MODO ID: #{m.id}</span>
+                        <div class="badge badge-outline badge-xs opacity-50">SISTEMA</div>
+                    </div>
+                </div>
+        ))}
+    </div>
+
+    <!-- MODAL DE GUARDAR -->
+    <dialog id="modal_mode" class="modal">
+        <div class="modal-box border border-base-300 p-0 overflow-visible bg-base-100">
+            <div class="bg-primary p-6 text-white">
+                <h3 id="modal_title" class="font-black text-2xl italic uppercase tracking-tighter">Gestionar Modo</h3>
+            </div>
+
+            <form method="POST" action={actions.saveGameMode} id="form-mode" class="p-8 space-y-4">
+                <input type="hidden" name="id" id="f_id" />
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Nombre del Modo</span></label>
+                    <input name="name" id="f_name" type="text" required class="input input-bordered w-full font-bold" placeholder="Ej: Clásico o Supervivencia" />
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Descripción de Reglas</span></label>
+                    <textarea name="description" id="f_desc" class="textarea textarea-bordered h-32 w-full" placeholder="¿Cómo se gana en este modo?"></textarea>
+                </div>
+
+                <div class="modal-action border-t border-base-300 pt-6 flex gap-3">
+                    <button type="button" onclick="modal_mode.close()" class="btn btn-ghost px-8">Cancelar</button>
+                    <FormButton class="btn-primary text-white flex-1 font-black uppercase shadow-lg">
+                        Guardar Modo
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <DeleteModal id="modal_delete" action={actions.deleteGameMode} />
+</DashboardLayout>
+
+<script>
+    const modal = document.getElementById('modal_mode') as any;
+    const form = document.getElementById('form-mode') as HTMLFormElement;
+
+    if (window.unlockButtons) window.unlockButtons();
+
+    // NUEVO
+    document.getElementById('btn-nuevo-modo')?.addEventListener('click', () => {
+        form.reset();
+        (document.getElementById('f_id') as HTMLInputElement).value = '';
+        (document.getElementById('modal_title') as HTMLElement).innerText = 'NUEVO MODO DE JUEGO';
+        modal.showModal();
+    });
+
+    // EDITAR
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            form.reset();
+            const id = btn.getAttribute('data-id');
+            (document.getElementById('f_id') as HTMLInputElement).value = id || '';
+            (document.getElementById('f_name') as HTMLInputElement).value = btn.getAttribute('data-name') || '';
+            (document.getElementById('f_desc') as HTMLTextAreaElement).value = btn.getAttribute('data-desc') || '';
+
+            (document.getElementById('modal_title') as HTMLElement).innerText = 'EDITAR MODO DE JUEGO';
+            modal.showModal();
+        });
+    });
+
+    // ELIMINAR
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar el modo <strong>${name}</strong>? Esto podría afectar a los eventos que lo usen.`;
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+</script>
