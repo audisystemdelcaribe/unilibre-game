@@ -8,6 +8,7 @@ import { lifelinesActions } from './modules/lifelines';
 import {gameModesActions} from './modules/game_modes';
 import { questionsActions } from './modules/questions.ts'
 import { fastestFingerActions } from './modules/fastest_finger';
+import { eventsActions } from './modules/events';
 
 export const server = {
     ...facultiesActions,
@@ -20,4 +21,5 @@ export const server = {
     ...gameModesActions,
     ...questionsActions,
     ...fastestFingerActions,
+    ...eventsActions,
 };

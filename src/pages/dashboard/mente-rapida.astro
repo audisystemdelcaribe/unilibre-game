@@ -174,7 +174,11 @@ const { data: sequences } = await Astro.locals.supabase
 
     // EDITAR
     document.querySelectorAll('.btn-edit').forEach(btn => {
+
+
         btn.addEventListener('click', () => {
+
+          console.log()
             form.reset();
             itemsContainer.innerHTML = '';
 
@@ -190,6 +194,32 @@ const { data: sequences } = await Astro.locals.supabase
 
             (document.getElementById('modal_title') as HTMLElement).innerText = 'EDITAR RETO';
             modal.showModal();
+        });
+    });
+
+    //eliminar
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            console.log("Botón eliminar presionado"); // Si ves esto en F12, el botón funciona
+
+            const id = btn.getAttribute('data-id');
+            const title = btn.getAttribute('data-title');
+
+            // Buscamos los elementos internos del DeleteModal que creamos antes
+            const inputId = document.getElementById('modal_delete-input-id') as HTMLInputElement;
+            const msg = document.getElementById('modal_delete-message');
+            const modal = document.getElementById('modal_delete') as any;
+
+            if (inputId) inputId.value = id || '';
+            if (msg) {
+                msg.innerHTML = `¿Estás seguro de eliminar el reto: <strong>"${title}"</strong>? <br><small class="text-error">Esta acción borrará también todos los elementos a ordenar.</small>`;
+            }
+
+            if (modal) {
+                modal.showModal();
+            } else {
+                console.error("No se encontró el modal con ID: modal_delete");
+            }
         });
     });
 

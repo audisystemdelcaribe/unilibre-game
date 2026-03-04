@@ -1,0 +1,245 @@
+---
+import DashboardLayout from "../../layouts/DashboardLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+import DeleteModal from "../../components/DeleteModal.astro";
+import FormButton from "../../components/FormButton.astro";
+
+// Capturamos el resultado para el Toast global
+const result = Astro.getActionResult(actions.saveEvent) || Astro.getActionResult(actions.deleteEvent);
+
+// 1. Cargar Eventos con sus relaciones
+const { data: events } = await Astro.locals.supabase
+    .from('events')
+    .select('*, seasons(name), game_modes(name), faculties(name), programs(name)')
+    .order('event_date', { ascending: false });
+
+// 2. Datos para los selectores del Modal
+const { data: seasons } = await Astro.locals.supabase.from('seasons').select('id, name').eq('status', 'active');
+const { data: modes } = await Astro.locals.supabase.from('game_modes').select('id, name');
+const { data: faculties } = await Astro.locals.supabase.from('faculties').select('id, name').order('name');
+const { data: programs } = await Astro.locals.supabase.from('programs').select('id, name, faculty_id').order('name');
+---
+
+<DashboardLayout title="Eventos / Salones" actionResult={result}>
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+        <div>
+            <h2 class="text-4xl font-black italic tracking-tighter uppercase text-slate-800">Eventos en Vivo</h2>
+            <p class="text-slate-500 font-medium font-mono text-xs">GESTIÓN DE SALAS DE COMPETENCIA</p>
+        </div>
+        <button id="btn-nuevo" class="btn btn-primary text-white font-bold px-8 shadow-lg">+ Crear Nueva Sala</button>
+    </div>
+
+    <!-- REJILLA DE EVENTOS -->
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        {events?.map((e) => (
+                <div class="card bg-white border border-base-300 shadow-sm overflow-hidden hover:border-primary/50 transition-all group">
+                    <div class="p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="badge badge-secondary badge-sm font-black text-[9px] uppercase tracking-tighter">{e.game_modes?.name}</span>
+                                    <span class="badge badge-ghost badge-sm font-bold text-[9px] uppercase">{e.scope}</span>
+                                </div>
+                                <h3 class="text-2xl font-black text-slate-800 uppercase italic leading-tight">{e.name}</h3>
+                            </div>
+                            <!-- ELIMINAMOS EL DIV DEL PIN DE AQUÍ -->
+                        </div>
+
+                        <p class="text-xs text-slate-500 mb-6 line-clamp-2 italic min-h-[32px]">
+                            {e.description || 'Sin descripción adicional.'}
+                        </p>
+
+                        <div class="grid grid-cols-2 gap-4 text-[11px] font-black text-slate-500 mb-6 bg-base-200/50 p-4 rounded-2xl border border-base-300">
+                            <div class="flex items-center gap-2">
+                                <Icon name="lucide:calendar-days" class="w-4 h-4 text-primary" />
+                                {new Date(e.event_date).toLocaleDateString('es-CO', { dateStyle: 'long' })}
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <Icon name="lucide:layers" class="w-4 h-4 text-primary" />
+                                {e.seasons?.name || 'Temporada Desconocida'}
+                            </div>
+                        </div>
+
+                        <div class="flex justify-between items-center pt-4 border-t border-dashed border-base-300">
+                            <div class="flex gap-1">
+                                <button class="btn btn-sm btn-circle btn-ghost text-primary btn-edit"
+                                        data-id={e.id} data-name={e.name} data-desc={e.description || ''}
+                                        data-date={e.event_date} data-season={e.season_id} data-mode={e.game_mode_id}
+                                        data-scope={e.scope} data-fac={e.faculty_id} data-prog={e.program_id} data-code={e.access_code}>
+                                    <Icon name="lucide:pencil" size={16} />
+                                </button>
+                                <button class="btn btn-sm btn-circle btn-ghost text-error btn-delete" data-id={e.id} data-name={e.name}>
+                                    <Icon name="lucide:trash-2" size={16} />
+                                </button>
+                            </div>
+                            <a href={`/dashboard/eventos/${e.id}/control`} class="btn btn-primary text-white font-black italic uppercase tracking-widest text-xs px-6 shadow-md hover:scale-105 transition-transform">
+                                Lanzar Panel de Control
+                            </a>
+                        </div>
+                    </div>
+                </div>
+        ))}
+    </div>
+
+    <!-- MODAL DE CONFIGURACIÓN -->
+    <dialog id="modal_event" class="modal">
+        <div class="modal-box max-w-3xl p-0 bg-base-100 border border-base-300 overflow-visible">
+            <div class="bg-primary p-6 text-white font-black text-2xl italic uppercase tracking-tighter flex justify-between items-center">
+                <span>Configurar Sala</span>
+                <button class="btn btn-sm btn-circle btn-ghost" onclick="modal_event.close()">✕</button>
+            </div>
+
+            <form method="POST" action={actions.saveEvent} id="form-event" class="p-8 space-y-6">
+                <input type="hidden" name="id" id="f_id" />
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Título del Evento</span></label>
+                        <input name="name" id="f_name" type="text" required class="input input-bordered w-full font-bold" placeholder="Ej: Parcial de Microeconomía" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Fecha Programada</span></label>
+                        <input name="event_date" id="f_date" type="date" required class="input input-bordered w-full font-bold" />
+                    </div>
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Descripción / Observaciones</span></label>
+                    <textarea name="description" id="f_desc" class="textarea textarea-bordered h-20 bg-base-200" placeholder="Detalles sobre el salón o la jornada..."></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Temporada</span></label>
+                        <select name="season_id" id="f_season" required class="select select-bordered font-bold">
+                            {seasons?.map(s => <option value={s.id}>{s.name}</option>)}
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-slate-400">Modo de Juego</span></label>
+                        <select name="game_mode_id" id="f_mode" required class="select select-bordered font-bold">
+                            {modes?.map(m => <option value={m.id}>{m.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- FILTRO DE ÁMBITO -->
+                <div class="bg-slate-900 p-6 rounded-2xl border border-slate-800 grid grid-cols-1 md:grid-cols-3 gap-4 shadow-inner">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-zinc-500">1. Ámbito</span></label>
+                        <select name="scope" id="f_scope" required class="select select-bordered bg-zinc-800 text-white border-zinc-700">
+                            <option value="global">Global</option>
+                            <option value="faculty">Facultad</option>
+                            <option value="program">Programa</option>
+                        </select>
+                    </div>
+                    <div class="form-control hidden" id="cont_fac">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-zinc-500">2. Facultad</span></label>
+                        <select name="faculty_id" id="f_fac" class="select select-bordered bg-zinc-800 text-white border-zinc-700">
+                            <option value="">Elegir...</option>
+                            {faculties?.map(f => <option value={f.id}>{f.name}</option>)}
+                        </select>
+                    </div>
+                    <div class="form-control hidden" id="cont_prog">
+                        <label class="label"><span class="label-text font-black text-[10px] uppercase text-zinc-500">3. Programa</span></label>
+                        <select name="program_id" id="f_prog" class="select select-bordered bg-zinc-800 text-white border-zinc-700">
+                            <option value="">Elegir...</option>
+                            {programs?.map(p => <option value={p.id} data-faculty-id={p.faculty_id}>{p.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="modal-action border-t border-base-200 pt-6 flex gap-3 px-8 pb-8">
+                    <button type="button" onclick="modal_event.close()" class="btn btn-ghost px-10">Cerrar</button>
+                    <FormButton class="btn-primary text-white flex-1 font-black shadow-lg uppercase italic tracking-widest">
+                        Guardar Configuración
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <DeleteModal id="modal_delete" action={actions.deleteEvent} />
+</DashboardLayout>
+
+<script>
+    const modal = document.getElementById('modal_event') as any;
+    const form = document.getElementById('form-event') as HTMLFormElement;
+    const scopeSelect = document.getElementById('f_scope') as HTMLSelectElement;
+    const facSelect = document.getElementById('f_fac') as HTMLSelectElement;
+    const progSelect = document.getElementById('f_prog') as HTMLSelectElement;
+
+    // --- LÓGICA DE VISIBILIDAD DE SCOPE ---
+    function updateScopeUI() {
+        const val = scopeSelect.value;
+        document.getElementById('cont_fac')?.classList.toggle('hidden', val === 'global');
+        document.getElementById('cont_prog')?.classList.toggle('hidden', val !== 'program');
+
+        facSelect.required = (val !== 'global');
+        progSelect.required = (val === 'program');
+    }
+
+    // --- FILTRO EN CASCADA ---
+    function filterPrograms() {
+        const facultyId = facSelect.value;
+        progSelect.querySelectorAll('option').forEach((opt: any) => {
+            if (opt.value === "") return;
+            opt.classList.toggle('hidden', opt.dataset.facultyId !== facultyId);
+        });
+        if (scopeSelect.value === 'program') progSelect.value = "";
+    }
+
+    scopeSelect.addEventListener('change', updateScopeUI);
+    facSelect.addEventListener('change', filterPrograms);
+
+    // --- NUEVO ---
+    document.getElementById('btn-nuevo')?.addEventListener('click', () => {
+        form.reset();
+        (document.getElementById('f_id') as HTMLInputElement).value = '';
+        updateScopeUI();
+        modal.showModal();
+    });
+
+    // --- EDITAR ---
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            form.reset();
+            const id = btn.getAttribute('data-id');
+            const scope = btn.getAttribute('data-scope') || 'global';
+            const facId = btn.getAttribute('data-fac');
+            const progId = btn.getAttribute('data-prog');
+
+            (document.getElementById('f_id') as HTMLInputElement).value = id || '';
+            (document.getElementById('f_name') as HTMLInputElement).value = btn.getAttribute('data-name') || '';
+            (document.getElementById('f_desc') as HTMLTextAreaElement).value = btn.getAttribute('data-desc') || '';
+            (document.getElementById('f_date') as HTMLInputElement).value = btn.getAttribute('data-date') || '';
+            (document.getElementById('f_season') as HTMLSelectElement).value = btn.getAttribute('data-season') || '';
+            (document.getElementById('f_mode') as HTMLSelectElement).value = btn.getAttribute('data-mode') || '';
+
+            scopeSelect.value = scope;
+            updateScopeUI();
+
+            if (facId) {
+                facSelect.value = facId;
+                filterPrograms(); // Mostramos los programas de esa facultad
+            }
+            if (progId) progSelect.value = progId;
+
+            modal.showModal();
+        });
+    });
+
+    // --- ELIMINAR ---
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar la sala <strong>${name}</strong>? Se borrará el historial de esa sesión.`;
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+
+    if (window.unlockButtons) window.unlockButtons();
+</script>
