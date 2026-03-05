@@ -1,104 +1,149 @@
 ---
-import "@/styles/global.css";
+import PlayLayout from "../../../layouts/PlayLayout.astro";
 import { Icon } from 'astro-icon/components';
 
 const { round_id } = Astro.params;
 
-// 1. Obtener datos iniciales de la sesión
+// 1. Seguridad y obtención de datos
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+const { data: player } = await Astro.locals.supabase
+    .from('players')
+    .select('id, name')
+    .eq('auth_user_id', user.id)
+    .single();
+
 const { data: round, error } = await Astro.locals.supabase
     .from('event_rounds')
     .select('*, events(name)')
     .eq('id', round_id)
     .single();
 
-if (error || !round) return Astro.redirect("/play?error=sesion_no_encontrada");
+if (error || !round || !player) return Astro.redirect("/play?error=sesion_invalida");
 
-// 2. Si por casualidad el juego ya empezó, mandarlo directo al juego
-if (round.status === 'active') {
-    return Astro.redirect(`/play/game/${round_id}`);
-}
-
-const user = await Astro.locals.getUser();
+// 2. Paleta de Degradados Gamer (Vibrantes)
+const gradients = [
+    'from-indigo-600 to-purple-900',
+    'from-fuchsia-600 to-pink-900',
+    'from-blue-600 to-indigo-900',
+    'from-emerald-500 to-teal-900',
+    'from-orange-500 to-red-900',
+    'from-rose-500 to-purple-900',
+    'from-violet-600 to-blue-900'
+];
+const myGradient = gradients[player.id % gradients.length];
 ---
 
-<html lang="es">
-<head>
-    <meta charset="utf-8" />
-    <title>Esperando inicio... | Unilibre Game</title>
-</head>
-<body class="bg-primary min-h-screen flex flex-col items-center justify-center p-6 text-white font-sans text-center">
+<PlayLayout title="Esperando al docente...">
+    <!-- Fondo con degradado dinámico y animación de entrada -->
+    <div class:list={["min-h-screen flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br transition-all duration-1000", myGradient]}>
 
-<div class="w-full max-w-md">
-    <!-- HEADER -->
-    <div class="mb-12 animate-pulse">
-        <h2 class="text-blue-200 font-bold uppercase tracking-widest text-sm mb-2">{round.events?.name}</h2>
-        <h1 class="text-4xl font-black italic uppercase tracking-tighter">¡ESTÁS DENTRO!</h1>
-    </div>
-
-    <!-- CONTENEDOR CENTRAL -->
-    <div class="bg-white text-zinc-900 p-10 rounded-[3rem] shadow-2xl relative overflow-hidden mb-12">
-        <div class="flex flex-col items-center gap-6">
-            <!-- Icono animado -->
-            <div class="w-24 h-24 bg-primary/10 rounded-full flex items-center justify-center text-primary animate-bounce">
-                <Icon name="lucide:gamepad-2" class="w-12 h-12" />
+        <div class="w-full max-w-md">
+            <!-- TITULARES -->
+            <div class="mb-10 animate-in fade-in zoom-in duration-700">
+                <h2 class="text-white/50 font-black uppercase text-[10px] tracking-[0.4em] mb-2 drop-shadow-sm">
+                    {round.events?.name}
+                </h2>
+                <h1 class="text-5xl font-black italic uppercase tracking-tighter text-white drop-shadow-2xl">
+                    ¡PREPARADO!
+                </h1>
             </div>
 
-            <div>
-                <h3 class="text-2xl font-black uppercase italic tracking-tight mb-2">Sala de espera</h3>
-                <p class="text-zinc-500 font-medium leading-tight">
-                    Mantén esta pantalla abierta. El docente iniciará el concurso en breve.
-                </p>
+            <!-- TARJETA LOBBY (GLASSMORPHISM) -->
+            <div class="bg-white/15 backdrop-blur-xl border border-white/20 p-12 rounded-[4rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] relative overflow-hidden mb-12">
+                <!-- Efecto de luz interna -->
+                <div class="absolute -top-10 -right-10 w-32 h-32 bg-white/20 rounded-full blur-2xl"></div>
+
+                <div class="flex flex-col items-center gap-10 relative z-10">
+                    <!-- ICONO CON ANIMACIÓN DE REBOTE RÁPIDO -->
+                    <div class="w-32 h-32 bg-white text-zinc-900 rounded-full flex items-center justify-center shadow-[0_10px_30px_rgba(0,0,0,0.4)] animate-bounce-fast">
+                        <Icon name="lucide:gamepad-2" class="w-16 h-16" />
+                    </div>
+
+                    <div class="space-y-3">
+                        <h3 class="text-3xl font-black uppercase italic text-white tracking-tight">Sala de espera</h3>
+                        <p class="text-white/80 font-medium text-sm leading-tight px-2">
+                            Grupo: <span class="text-white font-black underline decoration-primary decoration-2 underline-offset-4">{round.classroom_group_id}</span>
+                        </p>
+                        <p class="text-white/50 text-xs font-bold uppercase tracking-widest pt-2">No cierres esta pestaña</p>
+                    </div>
+
+                    <!-- Indicador de conexión -->
+                    <div class="flex items-center gap-3 bg-black/30 px-8 py-3 rounded-2xl border border-white/5 shadow-inner">
+                        <span class="loading loading-spinner loading-xs text-white"></span>
+                        <span class="text-[10px] font-black uppercase tracking-[0.2em] text-white/90">Sincronizando...</span>
+                    </div>
+                </div>
             </div>
 
-            <div class="badge badge-primary badge-lg font-bold py-4 px-6 gap-2">
-                <span class="loading loading-ring loading-xs"></span>
-                Sincronizando...
+            <!-- AVATAR DEL JUGADOR -->
+            <div class="flex flex-col items-center gap-3 animate-in fade-in slide-in-from-bottom duration-1000 delay-300">
+                <div class="w-20 h-20 rounded-3xl bg-white flex items-center justify-center font-black text-4xl shadow-2xl text-zinc-900 border-b-8 border-black/10 uppercase transform -rotate-3">
+                    {player.name.charAt(0)}
+                </div>
+                <div class="bg-black/20 backdrop-blur-md px-6 py-2 rounded-full border border-white/10">
+                    <p class="text-sm font-black text-white italic tracking-tight">{player.name}</p>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- PERFIL DEL ALUMNO -->
-    <div class="flex items-center justify-center gap-3 opacity-80">
-        <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-bold border border-white/30 uppercase">
-            {user?.email?.charAt(0)}
-        </div>
-        <div class="text-left">
-            <p class="text-[10px] font-black uppercase tracking-widest opacity-60">Listo para jugar</p>
-            <p class="text-sm font-bold truncate">{user?.email}</p>
-        </div>
-    </div>
-</div>
-
-<!-- SCRIPTS DE REALTIME -->
-<script is:inline src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script is:inline define:vars={{
-    url: import.meta.env.PUBLIC_SUPABASE_URL,
-    key: import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY,
-    roundId: round_id
-}}>
-    const supabaseClient = supabase.createClient(url, key);
-
-    // ESCUCHAR CAMBIOS EN LA RONDA
-    const channel = supabaseClient
-        .channel('waiting_room')
-        .on(
-            'postgres_changes',
-            {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'event_rounds',
-                filter: `id=eq.${roundId}`
-            },
-            (payload) => {
-                console.log('Cambio de estado detectado:', payload.new.status);
-
-                // Si el estado cambia a 'active', mandamos al alumno al juego
-                if (payload.new.status === 'active') {
-                    window.location.href = `/play/game/${roundId}`;
-                }
+    <style>
+        /* Animación de rebote personalizada: más alta, más rápida y más elástica */
+        @keyframes bounce-fast {
+            0%, 100% {
+                transform: translateY(-5%);
+                animation-timing-function: cubic-bezier(0.8, 0, 1, 1);
             }
-        )
-        .subscribe();
-</script>
-</body>
-</html>
+            50% {
+                transform: translateY(-35%);
+                animation-timing-function: cubic-bezier(0, 0, 0.2, 1);
+            }
+        }
+        .animate-bounce-fast {
+            animation: bounce-fast 0.8s infinite;
+        }
+
+        /* Suavizado de bordes para el degradado */
+        .bg-gradient-to-br {
+            background-attachment: fixed;
+        }
+    </style>
+
+    <script is:inline define:vars={{ roundId: round_id }}>
+        let yaRedirigido = false;
+
+        function irAlJuego() {
+            if (yaRedirigido) return;
+            yaRedirigido = true;
+            window.location.href = `/play/game/${roundId}`;
+        }
+
+        async function verificarStatus() {
+            if (yaRedirigido) return;
+            const client = window.supabaseClient;
+            if (!client) return;
+            const { data } = await client.from('event_rounds').select('status').eq('id', roundId).maybeSingle();
+            if (data?.status === 'active') irAlJuego();
+        }
+
+        function conectar() {
+            const client = window.supabaseClient;
+            if (!client) { setTimeout(conectar, 500); return; }
+
+            // Realtime
+            client.channel(`room-${roundId}`)
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'event_rounds', filter: `id=eq.${roundId}` },
+                    (payload) => {
+                        if (payload.new.status === 'active') irAlJuego();
+                    })
+                .subscribe();
+
+            // Polling (Failsafe)
+            setInterval(verificarStatus, 2500);
+        }
+
+        conectar();
+    </script>
+</PlayLayout>

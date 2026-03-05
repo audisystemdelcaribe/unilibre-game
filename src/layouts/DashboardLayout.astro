@@ -1,7 +1,7 @@
 ---
-import "../styles/global.css";
+import "@/styles/global.css";
 import { Icon } from 'astro-icon/components';
-import Toast from "../components/Toast.astro";
+import Toast from "@/components/Toast.astro";
 
 interface Props {
     title: string;
@@ -18,6 +18,10 @@ if (actionResult) {
         toastInfo = { type: 'error', message: actionResult.error.message || 'Ocurrió un error' };
     }
 }
+
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
+const supabaseKey = import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
 
 // 1. Recuperar sesión y perfil (Asegúrate que esto no falle)
 const user = await Astro.locals.getUser();
@@ -142,7 +146,7 @@ const filteredMenu = menuOptions.filter(opt => opt.roles.includes(role));
     </div>
 </main>
 
-<script is:inline>
+<script is:inline define:vars={{ url: supabaseUrl, key: supabaseKey }}>
     // Función global para desbloquear botones desde cualquier página
     window.unlockSubmitButtons = () => {
         const btns = document.querySelectorAll('button[type="submit"]');
@@ -169,6 +173,17 @@ const filteredMenu = menuOptions.filter(opt => opt.roles.includes(role));
             }, 10);
         }
     });
+
+    window.supabaseClient = supabase.createClient(url, key, {
+        realtime: {
+            params: {
+                events_per_second: 10,
+            }
+        }
+    });
+
+    window.supabaseClient.realtime.setAuth();
+    console.log("✅ Realtime Auth configurado");
 </script>
 </body>
 </html>

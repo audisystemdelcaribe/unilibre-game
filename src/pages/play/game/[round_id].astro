@@ -1,0 +1,194 @@
+---
+import PlayLayout from "../../../layouts/PlayLayout.astro";
+import { actions } from "astro:actions";
+import { Icon } from 'astro-icon/components';
+
+const { round_id } = Astro.params;
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+// 1. Datos de la Ronda y Pregunta
+const { data: round, error: roundError } = await Astro.locals.supabase
+    .from('event_rounds')
+    .select('*, events(name), questions(*, game_levels(points, time_limit), answers(*))')
+    .eq('id', round_id)
+    .single();
+
+// 2. Obtener / Crear Sesión
+const { data: player } = await Astro.locals.supabase
+    .from('players').select('id, name').eq('auth_user_id', user.id).single();
+
+let { data: gameSession } = await Astro.locals.supabase
+    .from('game_sessions')
+    .select('id, score')
+    .eq('player_id', player?.id)
+    .eq('event_id', round?.event_id)
+    .eq('finished', false)
+    .maybeSingle();
+
+if (!gameSession && player && round) {
+    const { data: newSession } = await Astro.locals.supabase
+        .from('game_sessions')
+        .insert([{
+            player_id: player.id,
+            event_id: round.event_id,
+            round_id: round.id,
+            session_type: 'classroom'
+        }])
+        .select().single();
+    gameSession = newSession;
+}
+
+if (roundError || !round || round.status !== 'active') {
+    return Astro.redirect(`/play/waiting/${round_id}`);
+}
+
+// 3. Resultado de la acción
+const result = Astro.getActionResult(actions.submitAnswer);
+const hasResponded = result?.data?.success;
+---
+
+<PlayLayout title="¡Carrera en Vivo!">
+    <div class="flex flex-col h-screen p-4 bg-zinc-950 text-white overflow-hidden font-sans">
+
+        <!-- CABECERA DE PUNTAJE -->
+        <div class="flex justify-between items-center bg-zinc-900 border border-zinc-800 p-4 rounded-[2rem] mb-6 shadow-2xl">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-primary rounded-2xl flex items-center justify-center font-black text-xl text-white shadow-lg italic">
+                    {player?.name?.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                    <p class="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">Puntos Totales</p>
+                    <p class="text-2xl font-black text-primary italic leading-none">{gameSession?.score || 0}</p>
+                </div>
+            </div>
+            <div class="badge badge-success text-white font-black text-[10px] italic px-4 py-3 gap-2 border-none">
+                <span class="w-2 h-2 bg-white rounded-full animate-ping"></span> LIVE
+            </div>
+        </div>
+
+        {hasResponded ? (
+            /* --- VISTA: RESULTADO DE TU RESPUESTA --- */
+                <div class="flex-1 flex flex-col items-center justify-center text-center animate-in zoom-in duration-300">
+                    <div class:list={["w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-2xl animate-bounce", result.data.correct ? "bg-success" : "bg-error"]}>
+                        <Icon name={result.data.correct ? "lucide:zap" : "lucide:circle-x"} class="w-16 h-16 text-white" />
+                    </div>
+                    <h2 class="text-4xl font-black uppercase italic mb-2 tracking-tighter">
+                        {result.data.correct ? '¡CORRECTO!' : '¡INCORRECTO!'}
+                    </h2>
+                    <div class="flex gap-4 mt-6">
+                        <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
+                            <p class="text-[10px] font-black text-zinc-500 uppercase mb-1 leading-none">Tiempo</p>
+                            <p class="text-2xl font-bold">{result.data.time}s</p>
+                        </div>
+                        <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
+                            <p class="text-[10px] font-black text-zinc-500 uppercase mb-1 leading-none">Puntos</p>
+                            <p class="text-2xl font-black text-primary">+{result.data.points}</p>
+                        </div>
+                    </div>
+                    <p class="mt-10 text-zinc-600 font-bold uppercase text-[10px] tracking-[0.3em] animate-pulse">
+                        Espera a que el docente lance la siguiente...
+                    </p>
+                </div>
+        ) : (
+            /* --- VISTA: PREGUNTA ACTIVA --- */
+                <div class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-8">
+                    <div class="text-center space-y-4">
+                        <h2 class="text-3xl md:text-5xl font-black leading-tight italic uppercase drop-shadow-2xl">
+                            {round.questions?.question_text}
+                        </h2>
+                    </div>
+
+                    <!-- UN SOLO FORMULARIO PARA TODAS LAS RESPUESTAS -->
+                    <form id="game-form" method="POST" action={actions.submitAnswer} class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                        <input type="hidden" name="round_id" value={round_id} />
+                        <input type="hidden" name="question_id" value={round.current_question_id} />
+                        <input type="hidden" name="session_id" value={gameSession?.id} />
+                        <input type="hidden" name="answer_id" id="selected-answer-id" />
+
+                        {round.questions?.answers.map((ans: any, idx: number) => (
+                                <button
+                                        type="button"
+                                        onclick={`handleAnswerClick('${ans.id}')`}
+                                        class="btn-option group relative h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] text-left overflow-hidden hover:border-primary transition-all active:scale-95 shadow-xl"
+                                >
+                                    <div class="flex items-center gap-5 px-8 relative z-10">
+                                <span class="w-12 h-12 rounded-2xl bg-zinc-800 group-hover:bg-primary flex items-center justify-center font-black text-2xl border border-zinc-700 shadow-inner">
+                                    {['A','B','C','D'][idx]}
+                                </span>
+                                        <span class="font-bold text-lg md:text-xl text-zinc-200">{ans.answer_text}</span>
+                                    </div>
+                                    <div class="absolute inset-0 bg-gradient-to-br from-primary/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                </button>
+                        ))}
+                    </form>
+                </div>
+        )}
+
+        <!-- BARRA DE TIEMPO -->
+        <div class="mt-8 max-w-4xl mx-auto w-full pb-10">
+            <div class="flex justify-between items-end mb-2 px-2">
+                <span class="text-[9px] font-black uppercase text-zinc-600 tracking-widest">{round.events?.name}</span>
+                {!hasResponded && <span id="timer-text" class="text-4xl font-black italic text-primary tabular-nums">00</span>}
+            </div>
+            <progress id="game-timer" class="progress progress-primary w-full h-4 shadow-inner bg-zinc-800" value="100" max="100"></progress>
+        </div>
+    </div>
+
+    <script is:inline define:vars={{ roundId: round_id, currentQ: round.current_question_id, startTime: round.question_started_at, limit: round.questions?.game_levels?.time_limit || 30 }}>
+        let isRedirecting = false;
+
+        // 1. FUNCIÓN PARA ENVIAR RESPUESTA (VITAL)
+        window.handleAnswerClick = function(answerId) {
+            const hiddenInput = document.getElementById('selected-answer-id');
+            const form = document.getElementById('game-form');
+            const buttons = document.querySelectorAll('.btn-option');
+
+            if (hiddenInput && form) {
+                hiddenInput.value = answerId;
+                // Desactivamos botones visualmente
+                buttons.forEach(btn => {
+                    btn.disabled = true;
+                    btn.style.opacity = "0.5";
+                });
+                console.log("Enviando respuesta:", answerId);
+                form.submit();
+            }
+        };
+
+        // 2. SINCRONIZACIÓN CON EL DOCENTE
+        async function sync() {
+            if (isRedirecting) return;
+            const client = window.supabaseClient;
+            if (!client) return;
+
+            const { data } = await client.from('event_rounds').select('current_question_id, status').eq('id', roundId).maybeSingle();
+
+            // Si el docente cambió la pregunta o el estado ya no es activo
+            if (data && (String(data.current_question_id) !== String(currentQ) || data.status !== 'active')) {
+                isRedirecting = true;
+                window.location.href = window.location.pathname; // Recarga limpia
+            }
+        }
+        setInterval(sync, 2500);
+
+        // 3. TIMER VISUAL
+        const bar = document.getElementById('game-timer');
+        const txt = document.getElementById('timer-text');
+        if (bar && startTime) {
+            const start = new Date(startTime).getTime();
+            const total = limit * 1000;
+            function frame() {
+                const now = new Date().getTime();
+                const rem = Math.max(0, total - (now - start));
+                bar.value = (rem / total) * 100;
+                if (txt) txt.innerText = Math.ceil(rem / 1000).toString().padStart(2, '0');
+                if (rem > 0 && !isRedirecting) requestAnimationFrame(frame);
+                else {
+                    document.querySelectorAll('button').forEach(b => b.disabled = true);
+                }
+            }
+            frame();
+        }
+    </script>
+</PlayLayout>
