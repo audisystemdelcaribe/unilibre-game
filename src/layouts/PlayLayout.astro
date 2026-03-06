@@ -22,7 +22,7 @@ const supabaseKey = import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
     <!-- Cargamos Supabase UNA sola vez para todo el flujo de juego -->
     <script is:inline src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
     <script is:inline define:vars={{ url: supabaseUrl, key: supabaseKey }}>
         if (typeof supabase !== 'undefined') {
             window.supabaseClient = supabase.createClient(url, key);

@@ -5,142 +5,115 @@ import { actions } from "astro:actions";
 import FormButton from "@/components/FormButton.astro";
 
 const { round_id } = Astro.params;
-
-// 1. Obtener datos de la ronda
 const { data: round } = await Astro.locals.supabase
-    .from('event_rounds')
-    .select('*, events(*)')
-    .eq('id', round_id)
-    .single();
+    .from('event_rounds').select('*, events(*)').eq('id', round_id).single();
 
-// 2. OBTENER BANCO DE PREGUNTAS (Lógica Inteligente)
-let qQuery = Astro.locals.supabase
-    .from('questions')
-    .select('id, question_text, game_levels(name, money_value)')
-    .eq('active', true)
-    .eq('level_id', 1);
-
-// Filtramos: Prioridad Materia > Programa > Global
-if (round?.events?.subject_id) {
-    qQuery = qQuery.eq('subject_id', round.events.subject_id);
-} else if (round?.events?.program_id) {
-    qQuery = qQuery.eq('program_id', round.events.program_id);
+// 1. Cargar Ranking Final solo si el juego terminó
+let rankingFinal = [];
+if (round?.status === 'finished') {
+    const { data } = await Astro.locals.supabase
+        .from('event_players')
+        .select('score, players(name)')
+        .eq('event_id', round.event_id)
+        .eq('classroom_group_id', round.classroom_group_id)
+        .order('score', { ascending: false })
+        .limit(10);
+    rankingFinal = data || [];
 }
 
-const { data: questionBank, error: bankError } = await qQuery.order('level_id', { ascending: true });
+// 2. Obtener texto de la pregunta actual
+let qText = "Esperando...";
+if (round?.current_question_id) {
+    const { data: q } = await Astro.locals.supabase.from('questions').select('question_text').eq('id', round.current_question_id).single();
+    qText = q?.question_text || "";
+}
 
-if (bankError) console.error("Error cargando banco:", bankError);
-
-const result = Astro.getActionResult(actions.startGame) || Astro.getActionResult(actions.nextQuestion);
-
+const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound);
 const isWaiting = round?.status === 'waiting';
+const isFinished = round?.status === 'finished';
 const isActive = round?.status === 'active';
+
 ---
 
-<DashboardLayout title="Panel de Control" actionResult={result}>
-    <div class="max-w-6xl mx-auto py-4">
+<DashboardLayout title="Control en Vivo" actionResult={result}>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
 
-        <!-- ESTADO SUPERIOR -->
-        <div class="flex justify-between items-center bg-white p-6 rounded-3xl border border-base-300 shadow-sm mb-8">
-            <div class="flex items-center gap-4">
-                <div class:list={["w-12 h-12 rounded-2xl flex items-center justify-center text-white", isWaiting ? "bg-amber-500" : "bg-green-500 shadow-lg shadow-green-200"]}>
-                    <Icon name={isWaiting ? "lucide:clock" : "lucide:play"} class="w-6 h-6" />
-                </div>
-                <div>
-                    <h2 class="font-black uppercase italic text-xl">{round?.events?.name}</h2>
-                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                        Grupo: {round?.classroom_group_id} | PIN: {round?.session_pin}
-                    </p>
-                </div>
-            </div>
+    <div class="max-w-5xl mx-auto space-y-6">
+        {isFinished ? (
+            /* --- VISTA: PODIO FINAL --- */
+                <div class="animate-in zoom-in duration-700 text-center py-10">
+                    <Icon name="lucide:trophy" class="w-32 h-32 text-yellow-500 mx-auto mb-6 drop-shadow-2xl" />
+                    <h1 class="text-5xl font-black italic uppercase text-slate-800 mb-10">Ranking Final del Salón</h1>
 
-            <div class="flex items-center gap-6">
-                <div class="text-right">
-                    <p class="text-[10px] font-black text-slate-400 uppercase">Participantes</p>
-                    <p class="text-3xl font-black text-primary" id="player-count">0</p>
-                </div>
-            </div>
-        </div>
-
-        {isWaiting ? (
-            /* --- VISTA: LOBBY --- */
-                <div class="animate-in fade-in zoom-in duration-500">
-                    <div class="bg-zinc-900 p-12 rounded-[3.5rem] border-4 border-primary shadow-2xl mb-12 text-center relative overflow-hidden">
-                        <div class="absolute top-0 left-0 w-full h-1 bg-primary animate-pulse"></div>
-                        <p class="text-zinc-500 font-bold uppercase tracking-[0.4em] mb-6 text-xs">PIN DE ACCESO</p>
-                        <div class="flex gap-4 justify-center">
-                            {round?.session_pin.split('').map(char => (
-                                    <span class="w-20 h-28 bg-zinc-800 flex items-center justify-center text-7xl font-black text-white rounded-2xl border border-zinc-700 shadow-inner">
-                                {char}
-                            </span>
-                            ))}
-                        </div>
+                    <div class="max-w-2xl mx-auto space-y-4">
+                        {rankingFinal.map((res, idx) => (
+                                <div class:list={[
+                                    "flex items-center justify-between p-6 rounded-[2rem] border-2 shadow-lg transition-all",
+                                    idx === 0 ? "bg-yellow-400 border-yellow-500 scale-105 mb-4 text-white" : "bg-white border-zinc-100 text-slate-700"
+                                ]}>
+                                    <div class="flex items-center gap-6">
+                                        <span class="text-3xl font-black italic">{idx + 1}°</span>
+                                        <span class="text-2xl font-bold uppercase tracking-tight">{res.players.name}</span>
+                                    </div>
+                                    <span class="text-3xl font-black font-mono">{res.score}</span>
+                                </div>
+                        ))}
                     </div>
 
-                    <div class="bg-white rounded-[2.5rem] border border-base-300 p-10">
-                        <div id="players-grid" class="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <!-- Estudiantes aquí -->
-                        </div>
-                        <div id="empty-msg" class="py-10 text-slate-400 italic text-center">Esperando estudiantes...</div>
-                    </div>
+                    <script is:inline>
+                        // Lanzar confeti al cargar el podio
+                        <script is:inline>
+                            // El docente siempre lanza confeti al terminar para celebrar con el salón
+                            confetti({
+                            particleCount: 200,
+                            spread: 100,
+                            origin: { y: 0.6 }
+                        });
+                    </script>
 
-                    <div class="mt-12 text-center">
-                        <form method="POST" action={actions.startGame}>
-                            <input type="hidden" name="round_id" value={round_id} />
-                            <FormButton class="btn-primary btn-wide btn-lg text-white font-black italic h-20 text-2xl shadow-xl">
-                                ¡EMPEZAR JUEGO!
-                            </FormButton>
-                        </form>
-                    </div>
                 </div>
         ) : (
-            /* --- VISTA: CONTROL DE PREGUNTAS --- */
+            /* --- LOBBY O JUEGO --- */
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div class="lg:col-span-2 space-y-6">
-                        <!-- Pregunta Actual -->
-                        <div class="bg-slate-900 text-white p-8 rounded-[3rem] border-b-8 border-primary shadow-2xl">
-                            <p class="text-primary font-black text-xs uppercase tracking-widest mb-4 italic">Pregunta Activa:</p>
-                            <h3 class="text-3xl font-bold italic" id="current-q-display">
-                                {round?.current_question_id ? 'Pregunta en curso...' : 'Selecciona una pregunta abajo para iniciar'}
-                            </h3>
-
-                            <div class="mt-8 flex gap-4">
-                                <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex-1 text-center">
-                                    <p class="text-[10px] text-zinc-500 uppercase font-black">Respuestas</p>
-                                    <p class="text-4xl font-black" id="answered-count">0</p>
-                                </div>
-                            </div>
+                        <div class="bg-zinc-900 text-white p-10 rounded-[3.5rem] border-b-8 border-primary shadow-2xl">
+                            {isWaiting ? (
+                                    <div class="text-center">
+                                        <p class="text-zinc-500 font-bold uppercase text-xs mb-4">PIN DE ACCESO</p>
+                                        <h2 class="text-8xl font-black tracking-widest text-white">{round?.session_pin}</h2>
+                                    </div>
+                            ) : (
+                                    <div>
+                                        <p class="text-primary font-black italic uppercase text-xs mb-4">Pregunta activa:</p>
+                                        <h1 class="text-3xl font-bold italic leading-tight">{qText}</h1>
+                                        <div class="mt-8 bg-white/5 p-4 rounded-2xl border border-white/10 w-fit">
+                                            <p class="text-[10px] text-zinc-500 uppercase font-black">Respuestas</p>
+                                            <p class="text-4xl font-black text-white" id="answered-count">0</p>
+                                        </div>
+                                    </div>
+                            )}
                         </div>
 
-                        <!-- Selector de Preguntas -->
-                        <div class="bg-white p-8 rounded-[3rem] border border-base-300 shadow-sm">
-                            <h3 class="font-black italic uppercase text-slate-800 mb-6 flex items-center gap-2">
-                                <Icon name="lucide:list" /> Banco de Preguntas ({questionBank?.length || 0})
-                            </h3>
-                            <div class="grid gap-3">
-                                {questionBank?.map((q) => (
-                                        <form method="POST" action={actions.nextQuestion} class="flex items-center justify-between p-4 bg-base-200 rounded-2xl hover:bg-base-300 transition-all group">
-                                            <input type="hidden" name="round_id" value={round_id} />
-                                            <input type="hidden" name="question_id" value={q.id} />
-                                            <div class="flex-1">
-                                                <span class="text-[9px] font-black text-primary uppercase">{q.game_levels?.name}</span>
-                                                <p class="text-sm font-bold text-slate-700">{q.question_text}</p>
-                                            </div>
-                                            <button type="submit" class="btn btn-primary btn-sm text-white font-black italic opacity-0 group-hover:opacity-100 transition-all">
-                                                LANZAR 🚀
-                                            </button>
-                                        </form>
-                                ))}
-                                {questionBank?.length === 0 && <p class="text-center text-slate-400 italic py-10">No hay preguntas disponibles para este programa/materia.</p>}
-                            </div>
+                        <div class="flex gap-4">
+                            <form method="POST" action={actions.launchRandomQuestion} class="flex-1">
+                                <input type="hidden" name="round_id" value={round_id} />
+                                <FormButton class="btn-primary w-full h-24 text-xl font-black shadow-xl rounded-3xl">
+                                    {isWaiting ? 'INICIAR JUEGO 🚀' : 'SIGUIENTE PREGUNTA ➡️'}
+                                </FormButton>
+                            </form>
+                            {isActive && (
+                                    <form method="POST" action={actions.finishRound} onsubmit="return confirm('¿Finalizar el juego?')">
+                                        <input type="hidden" name="round_id" value={round_id} />
+                                        <button type="submit" class="btn btn-error h-24 px-8 text-white font-black rounded-3xl shadow-xl">TERMINAR</button>
+                                    </form>
+                            )}
                         </div>
                     </div>
 
-                    <!-- Columna Ranking (Opcional por ahora) -->
-                    <div class="bg-white rounded-[3rem] border border-base-300 shadow-sm p-8">
-                        <h3 class="font-black italic uppercase text-slate-800 text-center border-b pb-4 mb-4">Top Salón</h3>
-                        <div id="live-ranking" class="space-y-3">
-                            <!-- Aquí irá el ranking -->
+                    <div class="bg-white p-8 rounded-[3rem] border border-base-300 shadow-sm flex flex-col h-[600px]">
+                        <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">Progreso</h3>
+                        <div id="responders-list" class="flex-1 overflow-y-auto space-y-2 pr-2">
+                            {isWaiting && <div id="players-grid" class="grid grid-cols-2 gap-2"></div>}
                         </div>
                     </div>
                 </div>
@@ -148,57 +121,52 @@ const isActive = round?.status === 'active';
     </div>
 </DashboardLayout>
 
-<script is:inline define:vars={{ round, isActive }}>
-    let alumnosVisibles = new Set();
+<script is:inline define:vars={{ round, isWaiting, isActive }}>
+    let procesados = new Set();
 
-    function dibujarAlumno(playerId, nombre) {
-        if (alumnosVisibles.has(playerId)) return;
-        alumnosVisibles.add(playerId);
-        const grid = document.getElementById('players-grid');
-        const countEl = document.getElementById('player-count');
-        const emptyMsg = document.getElementById('empty-msg');
-
-        if (grid) {
-            if (emptyMsg) emptyMsg.classList.add('hidden');
-            const div = document.createElement('div');
-            div.className = "bg-white p-4 rounded-2xl border-2 border-primary shadow-lg animate-bounce text-center";
-            div.innerHTML = `<p class="font-black text-primary uppercase text-[10px] truncate">${nombre}</p>`;
-            grid.prepend(div);
-        }
-        if (countEl) countEl.innerText = alumnosVisibles.size.toString();
-    }
-
-    async function refrescar() {
+    async function sync() {
         const client = window.supabaseClient;
         if (!client) return;
 
-        // 1. Sincronizar Alumnos (Híbrido)
-        const { data: alumnos, error } = await client
-            .from('event_players')
-            .select('player_id, players(name)')
-            .eq('event_id', parseInt(round.event_id))
-            .eq('classroom_group_id', round.classroom_group_id);
+        if (isWaiting) {
+            const { data: alumnos } = await client.from('event_players').select('player_id, players(name)').eq('event_id', round.event_id).eq('classroom_group_id', round.classroom_group_id);
+            alumnos?.forEach(a => {
+                if (!procesados.has(a.player_id)) {
+                    procesados.add(a.player_id);
+                    const div = document.createElement('div');
+                    div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
+                    div.innerText = a.players.name;
+                    document.getElementById('players-grid')?.appendChild(div);
+                }
+            });
+        }
 
-        if (error) console.error("Error cargando alumnos:", error);
-        alumnos?.forEach(a => { if (a.players?.name) dibujarAlumno(a.player_id, a.players.name); });
-
-        // 2. Si hay pregunta activa, contar respuestas
         if (isActive && round.current_question_id) {
-            const { count } = await client
-                .from('game_answers')
-                .select('*', { count: 'exact', head: true })
-                .eq('question_id', round.current_question_id);
-
-            const ansCountEl = document.getElementById('answered-count');
-            if (ansCountEl) ansCountEl.innerText = count || 0;
+            const { data: respuestas } = await client.from('game_answers').select('player_id, players(name)').eq('question_id', round.current_question_id).eq('round_id', round.id);
+            if (respuestas) {
+                document.getElementById('answered-count').innerText = respuestas.length;
+                respuestas.forEach(r => {
+                    const idDom = `resp-${r.player_id}`;
+                    if (!document.getElementById(idDom)) {
+                        const div = document.createElement('div');
+                        div.id = idDom;
+                        div.className = "p-4 bg-green-50 text-green-700 rounded-2xl text-xs font-bold flex justify-between border border-green-100 animate-in slide-in-from-right";
+                        div.innerHTML = `<span>${r.players.name}</span> <span>✓</span>`;
+                        document.getElementById('responders-list')?.prepend(div);
+                    }
+                });
+            }
         }
     }
 
-    function init() {
-        if (!window.supabaseClient) { setTimeout(init, 500); return; }
-        refrescar();
-        setInterval(refrescar, 3000); // Polling cada 3s
-    }
+    // Recarga automática si el docente presiona botones
+    setInterval(async () => {
+        const { data } = await window.supabaseClient.from('event_rounds').select('current_question_id, status').eq('id', round.id).single();
+        if (data && (data.current_question_id !== round.current_question_id || data.status !== round.status)) {
+            window.location.reload();
+        }
+    }, 4000);
 
-    init();
+    sync();
+    setInterval(sync, 2500);
 </script>
