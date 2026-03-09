@@ -5,6 +5,11 @@ import { Icon } from 'astro-icon/components';
 import DeleteModal from "@/components/DeleteModal.astro";
 import FormButton from "@/components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: profile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redirect("/dashboard");
+
 // Capturamos el resultado para el Toast global
 const result = Astro.getActionResult(actions.saveEvent) || Astro.getActionResult(actions.deleteEvent);
 
@@ -237,7 +242,9 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
             const id = btn.getAttribute('data-id');
             const name = btn.getAttribute('data-name');
             (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
-            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar la sala <strong>${name}</strong>? Se borrará el historial de esa sesión.`;
+            const msg = document.getElementById('modal_delete-message') as HTMLElement;
+            msg.textContent = '';
+            msg.append('¿Eliminar la sala ', Object.assign(document.createElement('strong'), { textContent: name || '' }), '? Se borrará el historial de esa sesión.');
             (document.getElementById('modal_delete') as any).showModal();
         });
     });

@@ -6,11 +6,23 @@ import FormButton from "../../components/FormButton.astro";
 const user = await Astro.locals.getUser();
 if (!user) return Astro.redirect("/");
 
+const errorParam = Astro.url.searchParams.get("error");
+const errorMessages: Record<string, string> = {
+    debes_unirte_con_pin: "Debes unirte con el PIN antes de jugar.",
+    no_participaste: "No participaste en esta ronda.",
+    ronda_no_encontrada: "Ronda no encontrada.",
+    sesion_invalida: "Sesión inválida.",
+    fin_participacion: "Fin de tu participación. No puedes volver a entrar a la sala.",
+};
+
 // Capturamos el resultado de la acción
 const result = Astro.getActionResult(actions.joinRoom);
 
 // Si tuvo éxito, redirigimos desde el servidor
 if (result?.data?.success) {
+    if (result.data.audience_only) {
+        return Astro.redirect(`/play/audience/${result.data.round_id}`);
+    }
     return Astro.redirect(`/play/waiting/${result.data.round_id}`);
 }
 ---
@@ -48,6 +60,14 @@ if (result?.data?.success) {
                     <p class="text-red-500 text-xs font-bold uppercase">{result.error.message}</p>
                 </div>
         )}
+        {errorParam && errorMessages[errorParam] && (
+                <div class="mt-6 p-4 bg-amber-500/10 border border-amber-500/50 rounded-2xl">
+                    <p class="text-amber-500 text-xs font-bold uppercase">{errorMessages[errorParam]}</p>
+                </div>
+        )}
+        <p class="mt-6 text-zinc-500 text-sm">
+            <a href="/play/ayudar" class="text-violet-400 hover:text-violet-300 font-bold underline underline-offset-2">¿Eres del público? Ayudar a participante</a>
+        </p>
     </div>
 </div>
 </body>

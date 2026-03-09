@@ -3,6 +3,11 @@ import DashboardLayout from "@/layouts/DashboardLayout.astro";
 import { actions } from "astro:actions";
 import FormButton from "@/components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: profile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redirect("/dashboard");
+
 const { id } = Astro.params; // Este es el event_id
 const result = Astro.getActionResult(actions.openClassroomSession);
 
@@ -13,9 +18,15 @@ if (result?.data?.success) {
 
 const { data: event } = await Astro.locals.supabase
     .from('events')
-    .select('name')
+    .select('name, game_mode_id')
     .eq('id', id)
     .single();
+
+const isMenteRapida = event?.game_mode_id === 3;
+const isClasico = event?.game_mode_id === 2;
+const noPideGrupo = isMenteRapida || isClasico;
+const groupValue = isMenteRapida ? 'Gran Final' : isClasico ? 'Silla Caliente' : '';
+const btnText = isMenteRapida ? 'Generar PIN y Abrir Mente más Rápida' : isClasico ? 'Generar PIN y Abrir Silla Caliente' : 'Generar PIN y Abrir Sala';
 ---
 
 <DashboardLayout title="Preparar Salón">
@@ -26,14 +37,16 @@ const { data: event } = await Astro.locals.supabase
 
             <form method="POST" action={actions.openClassroomSession} class="space-y-6">
                 <input type="hidden" name="event_id" value={id} />
-
-                <div class="form-control text-left">
-                    <label class="label font-bold uppercase text-[10px] text-slate-500">Nombre de tu Grupo / Salón</label>
-                    <input name="classroom_group_id" required type="text" placeholder="Ej: Sistemas 3-A" class="input input-bordered input-lg bg-base-200" />
-                </div>
-
+                {noPideGrupo ? (
+                    <input type="hidden" name="classroom_group_id" value={groupValue} />
+                ) : (
+                    <div class="form-control text-left">
+                        <label class="label font-bold uppercase text-[10px] text-slate-500">Nombre de tu Grupo / Salón</label>
+                        <input name="classroom_group_id" required type="text" placeholder="Ej: Sistemas 3-A" class="input input-bordered input-lg bg-base-200" />
+                    </div>
+                )}
                 <FormButton class="btn-primary btn-lg w-full text-white font-black italic uppercase">
-                    Generar PIN y Abrir Sala
+                    {btnText}
                 </FormButton>
             </form>
         </div>

@@ -7,109 +7,164 @@ const { round_id } = Astro.params;
 const user = await Astro.locals.getUser();
 if (!user) return Astro.redirect("/");
 
-// 1. Obtener datos de la Ronda y Pregunta actual
+// 1. Obtener datos de la Ronda y Pregunta
 const { data: round } = await Astro.locals.supabase
     .from('event_rounds')
-    .select('*, events(name, program_id), questions(*, game_levels(points, time_limit), answers(*))')
+    .select('*, events(name, game_mode_id), questions(*, game_levels(points, time_limit), answers(*))')
     .eq('id', round_id)
     .single();
 
-if (!round || round.status !== 'active') return Astro.redirect(`/play/waiting/${round_id}`);
+const isJuegoFinal = round?.events?.game_mode_id === 2;
 
-// 2. Obtener / Crear Sesión (Plan de rescate incluido)
+if (!round) return Astro.redirect("/play?error=ronda_no_encontrada");
+if (round.status !== 'active') return Astro.redirect(`/play/waiting/${round_id}`);
+
+// 2. Obtener Perfil e Identificar Sesión
 const { data: player } = await Astro.locals.supabase
     .from('players').select('id, name').eq('auth_user_id', user.id).single();
 
+if (!player) return Astro.redirect("/");
+
+// Verificar que el jugador se unió a esta ronda (está en event_players)
+const { data: inEvent } = await Astro.locals.supabase
+    .from('event_players')
+    .select('player_id')
+    .eq('event_id', round.event_id)
+    .eq('player_id', player.id)
+    .maybeSingle();
+
+if (!inEvent) return Astro.redirect("/play?error=debes_unirte_con_pin");
+
+// Sesión obligatoria para enviar respuestas
 let { data: gameSession } = await Astro.locals.supabase
     .from('game_sessions')
     .select('id, score')
-    .eq('player_id', player?.id)
+    .eq('player_id', player.id)
     .eq('event_id', round.event_id)
     .eq('finished', false)
     .maybeSingle();
 
+// Plan de rescate: solo si ya está en event_players (se unió con PIN) pero perdió la sesión
 if (!gameSession && player) {
-    const { data: newS } = await Astro.locals.supabase.from('game_sessions')
+    const { data: newS, error: sessErr } = await Astro.locals.supabase.from('game_sessions')
         .insert([{ player_id: player.id, event_id: round.event_id, round_id: round.id, session_type: 'classroom' }])
         .select().single();
+    if (sessErr) console.error('Error creando sesión:', sessErr);
     gameSession = newS;
 }
 
-// 3. Resultado de la acción (Feedback)
+// Comodines: solo para juego final (Clásico)
+let lifelines: { id: number; name: string; code: string | null }[] = [];
+if (round?.events?.game_mode_id === 2) {
+    const { data } = await Astro.locals.supabase.from('lifelines').select('id, name, code').order('name', { ascending: true });
+    lifelines = data || [];
+}
+
+// 3. Procesar resultado de la acción
 const result = Astro.getActionResult(actions.submitAnswer);
 const hasResponded = result?.data?.success || false;
 const isCorrect = result?.data?.correct || false;
+const submitError = result?.error?.message;
+// Log para debug (se envía al cliente)
+const debugResult = result ? {
+    success: result.data?.success,
+    error: result.error?.message,
+    insertId: result.data?.insertId,
+    points: result.data?.points,
+    time: result.data?.time
+} : null;
 ---
 
 <PlayLayout title="¡Carrera en Vivo!">
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
+    {debugResult && (
+        <script define:vars={{ debugResult }}>
+            console.log('[submitAnswer] Resultado en navegador:', debugResult);
+            if (debugResult.success) console.log('[submitAnswer] Respuesta guardada OK, id:', debugResult.insertId);
+            if (debugResult.error) console.error('[submitAnswer] Error:', debugResult.error);
+        </script>
+    )}
 
     <div class="flex flex-col h-screen p-4 bg-zinc-950 text-white overflow-hidden font-sans">
 
-        <!-- HEADER: SCORE ACTUAL -->
+        <!-- HEADER -->
         <header class="flex justify-between items-center bg-zinc-900 border border-zinc-800 p-4 rounded-[2rem] mb-6 shadow-2xl">
             <div class="flex items-center gap-4">
                 <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-black text-white italic">
                     {player?.name?.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                    <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos Totales</p>
+                    <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos</p>
                     <p class="text-xl font-black text-primary leading-none tabular-nums">{gameSession?.score || 0}</p>
                 </div>
             </div>
-            <div id="timer-display" class="text-4xl font-black italic text-white tabular-nums">00</div>
+            <div class="flex items-center gap-4">
+                {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
+                    <div id="lifelines-bar" class="flex gap-2 flex-wrap">
+                        {lifelines.map((l) => (
+                            <span class="lifeline-badge px-3 py-1 rounded-xl text-xs font-bold border bg-amber-500/20 border-amber-500/50 text-amber-400" data-code={l.code || ''} data-name={l.name}>
+                                {l.name}
+                            </span>
+                        ))}
+                    </div>
+                )}
+                {!isJuegoFinal && (
+                    <div id="timer-display" class="text-4xl font-black italic text-white tabular-nums">00</div>
+                )}
+            </div>
         </header>
 
         <main class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-8">
             {hasResponded ? (
                     <div class="flex flex-col items-center justify-center text-center animate-in zoom-in duration-300">
-                        <div class:list={[
-                            "w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-[0_0_50px_rgba(0,0,0,0.5)]",
-                            isCorrect ? "bg-success animate-bounce" : "bg-error animate-pulse"
-                        ]}>
+                        <div class:list={["w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-2xl animate-bounce", isCorrect ? "bg-success" : "bg-error"]}>
                             <Icon name={isCorrect ? "lucide:zap" : "lucide:circle-x"} class="w-16 h-16 text-white" />
                         </div>
-
                         <h2 class="text-5xl font-black uppercase italic mb-2 tracking-tighter drop-shadow-lg">
                             {isCorrect ? '¡CORRECTO!' : '¡INCORRECTO!'}
                         </h2>
-
                         <div class="flex gap-4 mt-8">
                             <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
-                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1 leading-none">Tiempo</p>
+                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Tiempo</p>
                                 <p class="text-2xl font-bold">{result?.data?.time}s</p>
                             </div>
                             <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
-                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1 leading-none">Puntos</p>
+                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Puntos</p>
                                 <p class="text-2xl font-black text-primary">+{result?.data?.points}</p>
                             </div>
                         </div>
-                        <p class="mt-10 text-zinc-600 font-bold uppercase text-[10px] tracking-[0.3em] animate-pulse">
-                            Espera la siguiente pregunta...
-                        </p>
+                    </div>
+            ) : !gameSession ? (
+                    <div class="text-center p-8">
+                        <p class="text-amber-500 font-bold">No hay sesión de juego activa. Recarga la página o vuelve a unirte con el PIN.</p>
+                        <a href="/play" class="btn btn-primary mt-4">Volver a unirse</a>
                     </div>
             ) : (
                     <div id="question-area" class="space-y-10">
+                        {submitError && (
+                                <div class="p-4 bg-red-500/20 border border-red-500/50 rounded-2xl text-red-400 text-sm font-bold">
+                                    Error: {submitError}
+                                </div>
+                        )}
                         <div class="text-center">
                             <h2 class="text-3xl md:text-5xl font-black leading-tight italic uppercase text-white drop-shadow-2xl">
                                 {round?.questions?.question_text}
                             </h2>
                         </div>
 
-                        <form id="answer-form" method="POST" action={actions.submitAnswer} class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <form id="game-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <input type="hidden" name="round_id" value={round_id} />
                             <input type="hidden" name="question_id" value={round?.current_question_id} />
                             <input type="hidden" name="session_id" value={gameSession?.id} />
-                            <input type="hidden" name="answer_id" id="answer_id_input" />
 
                             {round?.questions?.answers.map((ans: any, idx: number) => (
                                     <button
                                             type="button"
-                                            class="ans-btn group relative h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] text-left overflow-hidden hover:border-primary transition-all active:scale-95 shadow-xl"
-                                            onclick={`window.submitPlayerAnswer('${ans.id}')`}
+                                            data-answer-id={ans.id}
+                                            class="option-btn group relative h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] text-left overflow-hidden hover:border-primary transition-all active:scale-95 shadow-xl"
                                     >
                                         <div class="flex items-center gap-5 px-8 relative z-10">
-                                    <span class="w-12 h-12 rounded-2xl bg-zinc-800 group-hover:bg-primary flex items-center justify-center font-black text-2xl border border-zinc-700 transition-colors">
+                                    <span class="w-12 h-12 rounded-2xl bg-zinc-800 group-hover:bg-primary flex items-center justify-center font-black text-2xl border border-zinc-700">
                                         {['A','B','C','D'][idx]}
                                     </span>
                                             <span class="font-bold text-lg md:text-xl text-zinc-200">{ans.answer_text}</span>
@@ -118,71 +173,196 @@ const isCorrect = result?.data?.correct || false;
                                     </button>
                             ))}
                         </form>
-
-                        <div id="timeout-area" class="hidden flex-col items-center justify-center text-center animate-in zoom-in">
-                            <div class="w-32 h-32 bg-amber-500 rounded-full flex items-center justify-center mb-8 shadow-2xl">
-                                <Icon name="lucide:clock-alert" class="w-16 h-16 text-white" />
-                            </div>
-                            <h2 class="text-5xl font-black text-amber-500 italic uppercase">¡TIEMPO AGOTADO!</h2>
-                        </div>
                     </div>
+
+                    <div id="timeout-area" class="hidden flex-col items-center justify-center text-center animate-in zoom-in">
+                        <div class="w-32 h-32 bg-amber-500 rounded-full flex items-center justify-center mb-8 shadow-2xl">
+                            <Icon name="lucide:clock-alert" class="w-16 h-16 text-white" />
+                        </div>
+                        <h2 class="text-5xl font-black text-amber-500 italic uppercase">¡TIEMPO AGOTADO!</h2>
+                    </div>
+
             )}
         </main>
 
-        <footer class="mt-8 pb-10">
-            <progress id="timer-bar" class="progress progress-primary w-full h-4 bg-zinc-800 shadow-inner" value="100" max="100"></progress>
-        </footer>
+        {!isJuegoFinal && (
+            <footer class="mt-8 pb-10">
+                <progress id="timer-bar" class="progress progress-primary w-full h-4 bg-zinc-800 shadow-inner" value="100" max="100"></progress>
+            </footer>
+        )}
     </div>
 
-    <script is:inline define:vars={{ roundId: round_id, currentQ: round?.current_question_id, startTime: round?.question_started_at, limit: 30 }}>
+    <script define:vars={{ questionId: round?.current_question_id, roundId: round_id, isJuegoFinal }}>
+        window.isJuegoFinal = isJuegoFinal;
+
+        const form = document.getElementById('game-form');
+        const questionArea = document.getElementById('question-area');
+        const mainArea = document.querySelector('main');
+
+        // Polling: comodines solo en juego final; el docente los activa
+        let lifeline5050Applied = false;
+        async function checkLifelineState() {
+            if (!isJuegoFinal) return;
+            if (!questionId || !roundId || lifeline5050Applied) return;
+            try {
+                const r = await fetch(`/api/round-lifeline-state?round_id=${roundId}&question_id=${questionId}`);
+                const { used } = await r.json();
+                if (used?.['5050'] && form) {
+                    const meta = used['5050'];
+                    const hideIds = (typeof meta === 'object' && meta?.hide_ids) ? meta.hide_ids : [];
+                    if (Array.isArray(hideIds)) {
+                        hideIds.forEach((id) => {
+                            const opt = form.querySelector(`[data-answer-id="${id}"]`);
+                            if (opt) {
+                                opt.style.opacity = '0.2';
+                                opt.style.pointerEvents = 'none';
+                                opt.disabled = true;
+                            }
+                        });
+                    }
+                    document.querySelectorAll('.lifeline-badge').forEach(b => {
+                        const c = (b.dataset?.code || '').toLowerCase();
+                        const n = (b.dataset?.name || '').toLowerCase();
+                        if (c === '5050' || c.includes('50') || n.includes('50') || n.includes('50:50')) {
+                            b.classList.add('opacity-40', 'line-through');
+                        }
+                    });
+                    lifeline5050Applied = true;
+                }
+            } catch (_) {}
+        }
+        setInterval(checkLifelineState, 1500);
+        checkLifelineState();
+
+        function showResult(data) {
+            if (!mainArea) return;
+            const isCorrect = data?.correct ?? false;
+            const resultHtml = `
+                <div class="flex flex-col items-center justify-center text-center animate-in zoom-in duration-300">
+                    <div class="w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-2xl animate-bounce ${isCorrect ? 'bg-success' : 'bg-error'}">
+                        <span class="text-6xl">${isCorrect ? '✓' : '✗'}</span>
+                    </div>
+                    <h2 class="text-5xl font-black uppercase italic mb-2 tracking-tighter drop-shadow-lg">
+                        ${isCorrect ? '¡CORRECTO!' : '¡INCORRECTO!'}
+                    </h2>
+                    <div class="flex gap-4 mt-8">
+                        <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
+                            <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Tiempo</p>
+                            <p class="text-2xl font-bold">${data?.time ?? '0'}s</p>
+                        </div>
+                        <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
+                            <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Puntos</p>
+                            <p class="text-2xl font-black text-primary">+${data?.points ?? 0}</p>
+                        </div>
+                    </div>
+                    <p class="mt-4 text-xs text-zinc-500">Guardado id: ${data?.insertId ?? '-'}</p>
+                </div>
+            `;
+            if (questionArea) questionArea.classList.add('hidden');
+            const timeoutArea = document.getElementById('timeout-area');
+            if (timeoutArea) timeoutArea.classList.add('hidden');
+            mainArea.insertAdjacentHTML('beforeend', resultHtml);
+        }
+
+        if (form) {
+            form.querySelectorAll('.option-btn').forEach((btn) => {
+                btn.addEventListener('click', async (e) => {
+                    const target = e.currentTarget;
+                    const answerId = target?.dataset?.answerId;
+                    if (!answerId) return;
+
+                    if (isJuegoFinal) {
+                        // Juego final: solo marcar, no enviar. El docente evalúa.
+                        form.querySelectorAll('.option-btn').forEach((b) => {
+                            b.classList.remove('ring-4', 'ring-primary', 'ring-offset-2', 'ring-offset-zinc-950');
+                        });
+                        target.classList.add('ring-4', 'ring-primary', 'ring-offset-2', 'ring-offset-zinc-950');
+                        try {
+                            await fetch('/api/student-select-answer', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ round_id: roundId, question_id: questionId, answer_id: answerId }),
+                            });
+                        } catch (_) {}
+                        return;
+                    }
+
+                    if (form.dataset.submitting === '1') return;
+                    form.dataset.submitting = '1';
+                    window.gameAnswered = true;
+                    form.querySelectorAll('.option-btn').forEach((b) => {
+                        b.disabled = true;
+                        b.style.opacity = '0.5';
+                    });
+
+                    const formData = new FormData(form);
+                    formData.set('answer_id', answerId);
+
+                    try {
+                        const res = await fetch('/api/submit-answer', { method: 'POST', body: formData });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert('Error: ' + (data?.error || res.statusText));
+                            form.dataset.submitting = '0';
+                            return;
+                        }
+                        showResult(data ?? {});
+                    } catch (err) {
+                        console.error('[submitAnswer] Excepción:', err);
+                        alert('Error al enviar: ' + (err instanceof Error ? err.message : String(err)));
+                        form.dataset.submitting = '0';
+                    }
+                });
+            });
+        }
+    </script>
+    <script is:inline define:vars={{ roundId: round_id, currentQ: round?.current_question_id, startTime: round?.question_started_at, limit: round?.questions?.game_levels?.time_limit || 30, isJuegoFinal }}>
+        window.isJuegoFinal = isJuegoFinal;
         let isDone = false;
 
-        window.submitPlayerAnswer = function(id) {
-            if (isDone) return;
-            isDone = true;
-            const input = document.getElementById('answer_id_input');
-            const form = document.getElementById('game-form');
-            if (input && form) {
-                input.value = id;
-                document.querySelectorAll('.ans-btn').forEach(b => b.disabled = true);
-                form.submit();
-            }
-        };
-
+        // SINCRONIZACIÓN - Siempre verificar nueva pregunta (incluso en "tiempo agotado")
         async function sync() {
-            if (isDone && !document.querySelector('.animate-bounce')) return;
-            const { data } = await window.supabaseClient.from('event_rounds').select('current_question_id, status').eq('id', roundId).maybeSingle();
-            if (data && (String(data.current_question_id) !== String(currentQ) || data.status !== 'active')) {
-                isDone = true;
-                window.location.href = window.location.pathname;
+            const client = window.supabaseClient;
+            if (!client) return;
+            const { data } = await client.from('event_rounds').select('current_question_id, status').eq('id', roundId).maybeSingle();
+
+            if (data) {
+                if (String(data.current_question_id) !== String(currentQ)) {
+                    isDone = true;
+                    window.location.href = window.location.pathname;
+                    return;
+                }
+                if (data.status === 'finished') {
+                    isDone = true;
+                    window.location.href = `/play/results/${roundId}`;
+                }
             }
         }
-        setInterval(sync, 2500);
+        setInterval(sync, 2000);
 
+        // TIMER - Solo en preselección; en juego final no hay tiempo, va al ritmo del docente
         const bar = document.getElementById('timer-bar');
         const txt = document.getElementById('timer-display');
         const questionUI = document.getElementById('question-area');
         const timeoutUI = document.getElementById('timeout-area');
 
-        if (bar && startTime && !document.querySelector('.animate-bounce') && !document.querySelector('.animate-pulse')) {
+        if (!isJuegoFinal && bar && startTime && !document.querySelector('.animate-bounce')) {
             const start = new Date(startTime).getTime();
             const total = limit * 1000;
-
             function update() {
                 const now = new Date().getTime();
                 const rem = Math.max(0, total - (now - start));
-
                 if (bar) bar.value = (rem / total) * 100;
                 if (txt) txt.innerText = Math.ceil(rem / 1000).toString().padStart(2, '0');
 
-                if (rem <= 0 && !isDone) {
+                if (rem <= 0 && !isDone && !window.gameAnswered) {
                     isDone = true;
                     if (questionUI) questionUI.classList.add('hidden');
                     if (timeoutUI) {
                         timeoutUI.classList.remove('hidden');
                         timeoutUI.classList.add('flex');
                     }
-                } else if (!isDone) {
+                } else if (!isDone && !window.gameAnswered) {
                     requestAnimationFrame(update);
                 }
             }

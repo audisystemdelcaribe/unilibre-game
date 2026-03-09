@@ -5,6 +5,11 @@ import { Icon } from 'astro-icon/components';
 import DeleteModal from "../../components/DeleteModal.astro";
 import FormButton from "../../components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: myProfile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (myProfile?.role !== 'admin') return Astro.redirect("/dashboard");
+
 const resultSave = Astro.getActionResult(actions.saveSeason);
 const resultDelete = Astro.getActionResult(actions.deleteSeason);
 
@@ -182,7 +187,10 @@ const result = Astro.getActionResult(actions.saveSeason) || Astro.getActionResul
             const msg = document.getElementById('modal_delete-message') as HTMLElement;
 
             if (inputId) inputId.value = id || '';
-            if (msg) msg.innerHTML = `¿Estás seguro de eliminar la temporada <strong>${name}</strong>?`;
+            if (msg) {
+                msg.textContent = '';
+                msg.append('¿Estás seguro de eliminar la temporada ', Object.assign(document.createElement('strong'), { textContent: name || '' }), '?');
+            }
 
             (document.getElementById('modal_delete') as any).showModal();
         });

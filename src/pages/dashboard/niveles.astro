@@ -5,6 +5,11 @@ import { Icon } from 'astro-icon/components';
 import DeleteModal from "../../components/DeleteModal.astro";
 import FormButton from "../../components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: myProfile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (myProfile?.role !== 'admin') return Astro.redirect("/dashboard");
+
 // Capturamos resultados para el Toast automático
 const result = Astro.getActionResult(actions.saveLevel) || Astro.getActionResult(actions.deleteLevel);
 
@@ -196,7 +201,9 @@ const formatMoney = (value: number) => {
             const id = btn.getAttribute('data-id');
             const name = btn.getAttribute('data-name');
             (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
-            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar el nivel <strong>${name}</strong>? Esto alterará el flujo del dinero.`;
+            const msgEl = document.getElementById('modal_delete-message') as HTMLElement;
+            msgEl.textContent = '';
+            msgEl.append('¿Eliminar el nivel ', Object.assign(document.createElement('strong'), { textContent: name || '' }), '? Esto alterará el flujo del dinero.');
             (document.getElementById('modal_delete') as any).showModal();
         });
     });

@@ -8,9 +8,9 @@ interface Props {
 
 const { title } = Astro.props;
 
-// Leemos las variables para el cliente de Supabase
 const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL;
 const supabaseKey = import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const { data: { session } } = await Astro.locals.supabase.auth.getSession();
 ---
 
 <!DOCTYPE html>
@@ -23,9 +23,12 @@ const supabaseKey = import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY;
     <!-- Cargamos Supabase UNA sola vez para todo el flujo de juego -->
     <script is:inline src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
-    <script is:inline define:vars={{ url: supabaseUrl, key: supabaseKey }}>
+    <script is:inline define:vars={{ url: supabaseUrl, key: supabaseKey, accessToken: session?.access_token ?? '', refreshToken: session?.refresh_token ?? '' }}>
         if (typeof supabase !== 'undefined') {
             window.supabaseClient = supabase.createClient(url, key);
+            if (accessToken && refreshToken) {
+                window.supabaseClient.auth.setSession({ access_token: accessToken, refresh_token: refreshToken }).catch(() => {});
+            }
             console.log("✅ Cliente de juego inicializado");
         }
     </script>

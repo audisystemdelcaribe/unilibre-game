@@ -3,170 +3,578 @@ import DashboardLayout from "@/layouts/DashboardLayout.astro";
 import { Icon } from 'astro-icon/components';
 import { actions } from "astro:actions";
 import FormButton from "@/components/FormButton.astro";
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 const { round_id } = Astro.params;
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+const { data: myProfile } = await Astro.locals.supabase
+    .from('players')
+    .select('role')
+    .eq('auth_user_id', user.id)
+    .single();
+if (myProfile?.role !== 'admin' && myProfile?.role !== 'docente') return Astro.redirect("/dashboard");
+
 const { data: round } = await Astro.locals.supabase
     .from('event_rounds').select('*, events(*)').eq('id', round_id).single();
 
-// 1. Cargar Ranking Final solo si el juego terminó
-let rankingFinal = [];
-if (round?.status === 'finished') {
-    const { data } = await Astro.locals.supabase
-        .from('event_players')
-        .select('score, players(name)')
-        .eq('event_id', round.event_id)
-        .eq('classroom_group_id', round.classroom_group_id)
-        .order('score', { ascending: false })
-        .limit(10);
-    rankingFinal = data || [];
+// Usar supabaseAdmin para evitar RLS que devuelve null en relaciones embebidas
+const { data: ffRound } = await supabaseAdmin
+    .from('fastest_finger_rounds')
+    .select('*, fastest_finger_sequences(title)')
+    .eq('event_round_id', round_id)
+    .maybeSingle();
+
+const gameModeId = round?.events?.game_mode_id;
+const isMenteRapida = gameModeId === 3;
+const isFastestFinger = round?.status === 'fastest_finger';
+const isClasico = gameModeId === 2;
+
+let lifelines: { id: number; name: string; code: string | null; description: string | null }[] = [];
+if (gameModeId === 2) {
+    const { data } = await Astro.locals.supabase.from('lifelines').select('id, name, code, description').order('name', { ascending: true });
+    lifelines = data || [];
 }
 
-// 2. Obtener texto de la pregunta actual
-let qText = "Esperando...";
+let qText = "Cargando...";
+let currentLevel: { id: number; name: string; money_value: number; difficulty_order: number; is_safe_level: boolean } | null = null;
 if (round?.current_question_id) {
-    const { data: q } = await Astro.locals.supabase.from('questions').select('question_text').eq('id', round.current_question_id).single();
-    qText = q?.question_text || "";
+    const { data: q } = await Astro.locals.supabase.from('questions').select('question_text, level_id').eq('id', round.current_question_id).single();
+    qText = q?.question_text || qText;
+    if (q?.level_id && gameModeId === 2) {
+        const { data: lvl } = await Astro.locals.supabase.from('game_levels').select('id, name, money_value, difficulty_order, is_safe_level').eq('id', q.level_id).single();
+        currentLevel = lvl;
+    }
 }
 
-const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound);
+let prizeLevels: { id: number; name: string; money_value: number; difficulty_order: number; is_safe_level: boolean; time_limit: number }[] = [];
+if (gameModeId === 2) {
+    const { data } = await Astro.locals.supabase.from('game_levels').select('id, name, money_value, difficulty_order, is_safe_level, time_limit').order('difficulty_order', { ascending: true });
+    prizeLevels = data || [];
+}
+
+const formatMoney = (v: number) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v);
+
+// Ranking para el podio final (solo preselección; Clásico tiene vista distinta)
+let rankingFinal: { score: number; total_time_ms?: number; players?: { name: string }; player_id: number }[] = [];
+let clasicoResult: { name: string; score: number; levelOrder: number; levelName: string } | null = null;
+if (round?.status === 'finished') {
+    if (gameModeId === 2) {
+        // Clásico: usar active_contestants para obtener al participante que jugó (no el de mayor score)
+        const { data: ac } = await supabaseAdmin
+            .from('active_contestants')
+            .select('player_id')
+            .eq('event_id', round.event_id)
+            .maybeSingle();
+        const contestantId = ac?.player_id;
+        const { data: ep } = contestantId
+            ? await supabaseAdmin
+                .from('event_players')
+                .select('player_id, score, players(name)')
+                .eq('event_id', round.event_id)
+                .eq('player_id', contestantId)
+                .eq('classroom_group_id', round.classroom_group_id)
+                .maybeSingle()
+            : await supabaseAdmin
+                .from('event_players')
+                .select('player_id, score, players(name)')
+                .eq('event_id', round.event_id)
+                .eq('classroom_group_id', round.classroom_group_id)
+                .order('score', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+        if (ep) {
+            const { data: lastAns } = await supabaseAdmin
+                .from('game_answers')
+                .select('question_id')
+                .eq('round_id', parseInt(round_id))
+                .eq('player_id', ep.player_id)
+                .order('id', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            let levelOrder = 0;
+            let levelName = '—';
+            if (lastAns?.question_id) {
+                const { data: q } = await supabaseAdmin.from('questions').select('level_id').eq('id', lastAns.question_id).single();
+                if (q?.level_id) {
+                    const { data: lvl } = await supabaseAdmin.from('game_levels').select('difficulty_order, name').eq('id', q.level_id).single();
+                    if (lvl) {
+                        levelOrder = lvl.difficulty_order;
+                        levelName = lvl.name || `Nivel ${lvl.difficulty_order}`;
+                    }
+                }
+            }
+            clasicoResult = {
+                name: (ep.players as { name?: string })?.name || 'Participante',
+                score: ep.score ?? 0,
+                levelOrder,
+                levelName,
+            };
+        }
+    } else {
+        const { data } = await Astro.locals.supabase
+            .from('event_players')
+            .select('score, total_time_ms, players(name), player_id')
+            .eq('event_id', round.event_id)
+            .eq('classroom_group_id', round.classroom_group_id)
+            .order('score', { ascending: false })
+            .order('total_time_ms', { ascending: true })
+            .order('player_id', { ascending: true })
+            .limit(10);
+        rankingFinal = data || [];
+    }
+}
+
 const isWaiting = round?.status === 'waiting';
-const isFinished = round?.status === 'finished';
 const isActive = round?.status === 'active';
+const isFinished = round?.status === 'finished';
+
+// Comodines ya usados (solo Clásico)
+let usedLifelines: string[] = [];
+if (isClasico && round?.current_question_id && (isActive || isWaiting)) {
+    const { data: usage } = await supabaseAdmin
+        .from('round_lifeline_usage')
+        .select('lifeline_code')
+        .eq('round_id', parseInt(round_id))
+        .eq('question_id', round.current_question_id);
+    usedLifelines = (usage || []).map((u) => u.lifeline_code);
+}
+
+const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound) || Astro.getActionResult(actions.launchFastestFinger) || Astro.getActionResult(actions.confirmWinner) || Astro.getActionResult(actions.useLifeline5050) || Astro.getActionResult(actions.useLifelineCambiarPregunta) || Astro.getActionResult(actions.useLifelineLlamada) || Astro.getActionResult(actions.useLifelinePublico) || Astro.getActionResult(actions.verifyClasicoAnswer);
+
+// Si confirmWinner redirigió a Silla Caliente, ir al panel del evento Clásico
+const confirmResult = Astro.getActionResult(actions.confirmWinner);
+if (confirmResult?.data?.clasico_round_id) {
+    return Astro.redirect(`/dashboard/eventos/control/${confirmResult.data.clasico_round_id}`);
+}
 
 ---
 
-<DashboardLayout title="Control en Vivo" actionResult={result}>
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
+<DashboardLayout title="Control de Mando" actionResult={result}>
+    <script is:inline src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
 
     <div class="max-w-5xl mx-auto space-y-6">
-        {isFinished ? (
-            /* --- VISTA: PODIO FINAL --- */
-                <div class="animate-in zoom-in duration-700 text-center py-10">
-                    <Icon name="lucide:trophy" class="w-32 h-32 text-yellow-500 mx-auto mb-6 drop-shadow-2xl" />
-                    <h1 class="text-5xl font-black italic uppercase text-slate-800 mb-10">Ranking Final del Salón</h1>
 
+        <!-- Árbol de premios: solo para Clásico (va en el lateral). Preselección sin escala. -->
+
+        {isFinished ? (
+            isClasico ? (clasicoResult ? (
+                <!-- VISTA: JUEGO FINAL (Clásico) - Resumen del participante -->
+                <div class="text-center py-10 animate-in zoom-in max-w-2xl mx-auto">
+                    <Icon name="lucide:trophy" class="w-24 h-24 text-yellow-500 mx-auto mb-6" />
+                    <h1 class="text-4xl font-black italic uppercase mb-8">Juego Terminado</h1>
+                    <div class="bg-zinc-900 border-2 border-zinc-700 p-10 rounded-[2.5rem] shadow-2xl text-left">
+                        <p class="text-zinc-500 font-bold uppercase text-xs tracking-widest mb-2">Participante</p>
+                        <p class="text-2xl font-black text-white mb-6">{clasicoResult.name}</p>
+                        <p class="text-zinc-500 font-bold uppercase text-xs tracking-widest mb-2">Nivel alcanzado</p>
+                        <p class="text-xl font-bold text-zinc-300 mb-6">{clasicoResult.levelName} (nivel {clasicoResult.levelOrder})</p>
+                        <p class="text-zinc-500 font-bold uppercase text-xs tracking-widest mb-2">Premio</p>
+                        <p class="text-3xl font-black text-yellow-400 tabular-nums">
+                            {clasicoResult.score > 0 ? formatMoney(clasicoResult.score) : '$0'}
+                        </p>
+                        <p class="text-zinc-500 text-sm mt-2">
+                            {clasicoResult.score > 0 ? 'Ganó dinero' : 'No alcanzó un seguro'}
+                        </p>
+                    </div>
+                </div>
+            ) : (
+                <div class="text-center py-10">
+                    <h1 class="text-4xl font-black italic uppercase mb-6">Juego Terminado</h1>
+                    <p class="text-zinc-500">No hay datos del participante.</p>
+                </div>
+            )) : (
+                <!-- VISTA: RANKING FINAL (Preselección) -->
+                <div class="text-center py-10 animate-in zoom-in">
+                    <Icon name="lucide:trophy" class="w-32 h-32 text-yellow-500 mx-auto mb-6" />
+                    <h1 class="text-5xl font-black italic uppercase mb-10">Ranking Final</h1>
                     <div class="max-w-2xl mx-auto space-y-4">
-                        {rankingFinal.map((res, idx) => (
-                                <div class:list={[
-                                    "flex items-center justify-between p-6 rounded-[2rem] border-2 shadow-lg transition-all",
-                                    idx === 0 ? "bg-yellow-400 border-yellow-500 scale-105 mb-4 text-white" : "bg-white border-zinc-100 text-slate-700"
-                                ]}>
+                        {rankingFinal.map((r, i) => (
+                                <div class:list={["flex items-center justify-between p-6 rounded-[2rem] border-2 shadow-sm", i === 0 ? "bg-zinc-900 border-yellow-500 text-white scale-105 mb-4" : "bg-white border-zinc-100"]}>
                                     <div class="flex items-center gap-6">
-                                        <span class="text-3xl font-black italic">{idx + 1}°</span>
-                                        <span class="text-2xl font-bold uppercase tracking-tight">{res.players.name}</span>
+                                        <span class="text-2xl font-black italic text-primary">{i + 1}°</span>
+                                        <span class="text-xl font-bold uppercase">{r.players?.name}</span>
                                     </div>
-                                    <span class="text-3xl font-black font-mono">{res.score}</span>
+                                    <div class="text-right">
+                                        <span class="text-3xl font-black font-mono block">{r.score}</span>
+                                        <span class="text-xs text-zinc-500 font-mono">{(r.total_time_ms ?? 0) / 1000}s</span>
+                                    </div>
                                 </div>
                         ))}
                     </div>
-
-                    <script is:inline>
-                        // Lanzar confeti al cargar el podio
-                        <script is:inline>
-                            // El docente siempre lanza confeti al terminar para celebrar con el salón
-                            confetti({
-                            particleCount: 200,
-                            spread: 100,
-                            origin: { y: 0.6 }
-                        });
-                    </script>
-
+                    <script is:inline>confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });</script>
                 </div>
+            )
         ) : (
-            /* --- LOBBY O JUEGO --- */
+            <!-- VISTA: LOBBY O JUEGO -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div class="lg:col-span-2 space-y-6">
                         <div class="bg-zinc-900 text-white p-10 rounded-[3.5rem] border-b-8 border-primary shadow-2xl">
                             {isWaiting ? (
                                     <div class="text-center">
-                                        <p class="text-zinc-500 font-bold uppercase text-xs mb-4">PIN DE ACCESO</p>
-                                        <h2 class="text-8xl font-black tracking-widest text-white">{round?.session_pin}</h2>
+                                        <p class="text-zinc-500 font-bold uppercase text-xs mb-4">PIN</p>
+                                        <h2 class="text-9xl font-black tracking-widest">{round.session_pin}</h2>
+                                        {isMenteRapida && (
+                                            <p class="text-amber-400 text-sm font-bold mt-4">Modo Mente más Rápida - Solo finalistas</p>
+                                        )}
+                                        {isClasico && (
+                                            <p class="text-amber-400 text-sm font-bold mt-4">Modo Silla Caliente - Clásico</p>
+                                        )}
+                                        {isClasico && lifelines && lifelines.length > 0 && (
+                                            <div class="mt-6 pt-4 border-t border-white/10">
+                                                <p class="text-[10px] text-amber-400/80 uppercase font-black mb-2">Comodines</p>
+                                                <div class="flex flex-wrap gap-2 justify-center">
+                                                    {lifelines.map((l) => (
+                                                        <span class="px-3 py-1 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-300 text-xs font-bold">{l.name}</span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                            ) : isFastestFinger ? (
+                                    <div>
+                                        <p class="text-yellow-400 font-black italic uppercase text-xs mb-4">Mente más Rápida</p>
+                                        <h1 class="text-2xl font-bold italic" id="question-text">{ffRound?.fastest_finger_sequences?.title ?? 'Ordena los ítems en el orden correcto'}</h1>
+                                        <div class="mt-8 flex gap-4">
+                                            <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex-1 text-center">
+                                                <p class="text-[10px] text-zinc-500 uppercase font-black">Respondieron</p>
+                                                <p class="text-4xl font-black text-white" id="answered-count">0</p>
+                                            </div>
+                                        </div>
+                                        <div id="ff-attempts-list" class="mt-6 space-y-2 max-h-48 overflow-y-auto"></div>
+                                        <div id="ff-winner-box" class="mt-4 hidden p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-2xl">
+                                            <p class="text-[10px] font-black text-yellow-400 uppercase">Ganador sugerido</p>
+                                            <p id="ff-winner-name" class="text-xl font-black text-white"></p>
+                                            <form method="POST" action={actions.confirmWinner} class="mt-3" onsubmit="return confirm('¿Confirmar ganador?');">
+                                                <input type="hidden" name="round_id" value={round_id} />
+                                                <input type="hidden" name="player_id" id="ff-winner-player-id" />
+                                                <button type="submit" class="btn btn-warning btn-sm">Confirmar ganador → Silla Caliente</button>
+                                            </form>
+                                        </div>
                                     </div>
                             ) : (
                                     <div>
-                                        <p class="text-primary font-black italic uppercase text-xs mb-4">Pregunta activa:</p>
-                                        <h1 class="text-3xl font-bold italic leading-tight">{qText}</h1>
-                                        <div class="mt-8 bg-white/5 p-4 rounded-2xl border border-white/10 w-fit">
-                                            <p class="text-[10px] text-zinc-500 uppercase font-black">Respuestas</p>
-                                            <p class="text-4xl font-black text-white" id="answered-count">0</p>
+                                        <p class="text-primary font-black italic uppercase text-xs mb-4">En curso:</p>
+                                        <h1 class="text-3xl font-bold italic" id="question-text">{qText}</h1>
+                                        <div class="mt-8 flex gap-4">
+                                            <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex-1 text-center">
+                                                <p class="text-[10px] text-zinc-500 uppercase font-black">Respondieron</p>
+                                                <p class="text-4xl font-black text-white" id="answered-count">0</p>
+                                            </div>
                                         </div>
+                                        {isClasico && (
+                                            <div class="mt-4 p-4 bg-violet-500/20 border border-violet-500/50 rounded-2xl">
+                                                <p class="text-[10px] text-violet-400 uppercase font-black mb-1">PIN para unirse como público</p>
+                                                <p class="text-2xl font-mono font-black text-violet-300 tracking-widest">{round?.session_pin || '—'}</p>
+                                                <p class="text-[10px] text-zinc-500 mt-1">Ir a <strong>Ayudar a participante</strong> en el menú o a /play/ayudar e ingresar este PIN.</p>
+                                            </div>
+                                        )}
+                                        {isClasico && (
+                                            <div id="audience-votes-box" class:list={["mt-4 p-4 bg-violet-500/20 border border-violet-500/50 rounded-2xl", !usedLifelines.includes('publico') && "hidden"]}>
+                                                <p class="text-[10px] text-violet-400 uppercase font-black mb-2">Votación del público</p>
+                                                <div id="audience-chart" class="space-y-2 min-h-[120px]"></div>
+                                            </div>
+                                        )}
+                                        {isClasico && (
+                                            <div id="student-selection-box" class="mt-4 p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl hidden">
+                                                <p class="text-[10px] text-amber-400 uppercase font-black mb-2">El estudiante marcó:</p>
+                                                <p id="student-selection-text" class="text-lg font-bold text-white mb-3">—</p>
+                                                <form method="POST" action={actions.verifyClasicoAnswer} class="inline">
+                                                    <input type="hidden" name="round_id" value={round_id} />
+                                                    <button type="submit" class="btn btn-primary btn-sm text-white font-bold">Verificar respuesta</button>
+                                                </form>
+                                                <p class="text-[10px] text-zinc-500 mt-2">El sistema verifica en la base de datos si es correcta o incorrecta.</p>
+                                            </div>
+                                        )}
+                                        {isClasico && lifelines && lifelines.length > 0 && (
+                                            <div class="mt-4 pt-4 border-t border-white/10">
+                                                <p class="text-[10px] text-amber-400/80 uppercase font-black mb-2">Comodines — el docente activa</p>
+                                                <div class="flex flex-wrap gap-2">
+                                                    {lifelines.map((l) => {
+                                                        const code = (l.code || '').toLowerCase();
+                                                        const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
+                                                        const isCambiar = code === 'cambiar' || code === 'saltar' || (l.name || '').toLowerCase().includes('cambiar');
+                                                        const isPublico = code === 'publico' || (l.name || '').toLowerCase().includes('público') || (l.name || '').toLowerCase().includes('publico');
+                                                        const isLlamada = code === 'llamada' || (l.name || '').toLowerCase().includes('llamada');
+                                                        const is5050Used = is5050 && usedLifelines.includes('5050');
+                                                        const isCambiarUsed = isCambiar && usedLifelines.includes('cambiar');
+                                                        const isPublicoUsed = isPublico && usedLifelines.includes('publico');
+                                                        const isLlamadaUsed = isLlamada && usedLifelines.includes('llamada');
+                                                        if (is5050) {
+                                                            return (
+                                                                <form method="POST" action={actions.useLifeline5050} class="inline" onsubmit={!is5050Used ? "return confirm('¿Usar 50:50? Se quitarán 2 respuestas incorrectas al estudiante.');" : "return false;"}>
+                                                                    <input type="hidden" name="round_id" value={round_id} />
+                                                                    <input type="hidden" name="question_id" value={round?.current_question_id} />
+                                                                    <button type="submit" disabled={is5050Used} class:list={["px-4 py-2 rounded-xl text-xs font-bold border transition-all", is5050Used ? "bg-zinc-700/50 border-zinc-600 text-zinc-500 cursor-not-allowed" : "bg-amber-500/30 border-amber-500/60 text-amber-300 hover:bg-amber-500/50"]} title="Quitar 2 respuestas incorrectas al azar">
+                                                                        {l.name} {is5050Used ? '(usado)' : ''}
+                                                                    </button>
+                                                                </form>
+                                                            );
+                                                        }
+                                                        if (isCambiar) {
+                                                            return (
+                                                                <form method="POST" action={actions.useLifelineCambiarPregunta} class="inline" onsubmit={!isCambiarUsed ? "return confirm('¿Cambiar pregunta? Se buscará otra del mismo nivel.');" : "return false;"}>
+                                                                    <input type="hidden" name="round_id" value={round_id} />
+                                                                    <input type="hidden" name="question_id" value={round?.current_question_id} />
+                                                                    <button type="submit" disabled={isCambiarUsed} class:list={["px-4 py-2 rounded-xl text-xs font-bold border transition-all", isCambiarUsed ? "bg-zinc-700/50 border-zinc-600 text-zinc-500 cursor-not-allowed" : "bg-amber-500/30 border-amber-500/60 text-amber-300 hover:bg-amber-500/50"]} title="Buscar otra pregunta del mismo nivel">
+                                                                        {l.name} {isCambiarUsed ? '(usado)' : ''}
+                                                                    </button>
+                                                                </form>
+                                                            );
+                                                        }
+                                                        if (isPublico) {
+                                                            return (
+                                                                <button type="button" data-lifeline="publico" data-round={round_id} data-question={round?.current_question_id} disabled={isPublicoUsed} class:list={["lifeline-ajax px-4 py-2 rounded-xl text-xs font-bold border transition-all", isPublicoUsed ? "bg-zinc-700/50 border-zinc-600 text-zinc-500 cursor-not-allowed" : "bg-amber-500/30 border-amber-500/60 text-amber-300 hover:bg-amber-500/50"]} title="El público verá la votación">
+                                                                    {l.name} {isPublicoUsed ? '(usado)' : ''}
+                                                                </button>
+                                                            );
+                                                        }
+                                                        if (isLlamada) {
+                                                            return (
+                                                                <button type="button" data-lifeline="llamada" data-round={round_id} data-question={round?.current_question_id} disabled={isLlamadaUsed} class:list={["lifeline-ajax px-4 py-2 rounded-xl text-xs font-bold border transition-all", isLlamadaUsed ? "bg-zinc-700/50 border-zinc-600 text-zinc-500 cursor-not-allowed" : "bg-amber-500/30 border-amber-500/60 text-amber-300 hover:bg-amber-500/50"]} title="Solo deshabilita al seleccionar">
+                                                                    {l.name} {isLlamadaUsed ? '(usado)' : ''}
+                                                                </button>
+                                                            );
+                                                        }
+                                                        return (
+                                                            <span class="px-3 py-1 bg-zinc-700/30 border border-zinc-600 rounded-xl text-zinc-500 text-xs font-bold" title="Próximamente">{l.name}</span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                             )}
                         </div>
 
-                        <div class="flex gap-4">
-                            <form method="POST" action={actions.launchRandomQuestion} class="flex-1">
+                        {isMenteRapida && isWaiting ? (
+                            <form method="POST" action={actions.launchFastestFinger}>
                                 <input type="hidden" name="round_id" value={round_id} />
-                                <FormButton class="btn-primary w-full h-24 text-xl font-black shadow-xl rounded-3xl">
-                                    {isWaiting ? 'INICIAR JUEGO 🚀' : 'SIGUIENTE PREGUNTA ➡️'}
+                                <FormButton class="btn-warning w-full h-20 text-xl font-black shadow-xl rounded-3xl">
+                                    ⚡ ACTIVAR MENTE MÁS RÁPIDA (reto aleatorio)
                                 </FormButton>
                             </form>
-                            {isActive && (
-                                    <form method="POST" action={actions.finishRound} onsubmit="return confirm('¿Finalizar el juego?')">
-                                        <input type="hidden" name="round_id" value={round_id} />
-                                        <button type="submit" class="btn btn-error h-24 px-8 text-white font-black rounded-3xl shadow-xl">TERMINAR</button>
-                                    </form>
-                            )}
-                        </div>
+                        ) : !isFastestFinger && (
+                            <>
+                                {!(isClasico && isActive) && (
+                                    <>
+                                        <form method="POST" action={actions.launchRandomQuestion} onsubmit={isActive ? "return confirm('¿Lanzar siguiente pregunta?');" : undefined}>
+                                            <input type="hidden" name="round_id" value={round_id} />
+                                            <FormButton class="btn-primary w-full h-24 text-xl font-black shadow-xl rounded-3xl">
+                                                {isWaiting ? 'INICIAR JUEGO 🚀' : 'SIGUIENTE PREGUNTA ➡️'}
+                                            </FormButton>
+                                        </form>
+                                        {isActive && (
+                                            <form method="POST" action={actions.finishRound} onsubmit="return confirm('¿Terminar?')">
+                                                <input type="hidden" name="round_id" value={round_id} />
+                                                <button type="submit" class="btn btn-error w-full text-white font-black">FINALIZAR JUEGO</button>
+                                            </form>
+                                        )}
+                                    </>
+                                )}
+                                {isClasico && isActive && (
+                                    <p class="text-zinc-500 text-sm font-bold text-center py-4">Esperando que el estudiante marque una opción. Luego haz clic en Verificar respuesta.</p>
+                                )}
+                            </>
+                        )}
                     </div>
 
-                    <div class="bg-white p-8 rounded-[3rem] border border-base-300 shadow-sm flex flex-col h-[600px]">
-                        <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">Progreso</h3>
-                        <div id="responders-list" class="flex-1 overflow-y-auto space-y-2 pr-2">
-                            {isWaiting && <div id="players-grid" class="grid grid-cols-2 gap-2"></div>}
+                    <!-- LATERAL: Clásico = escalera de premios (nivel 1 abajo, sin scroll) -->
+                    {isClasico && prizeLevels && prizeLevels.length > 0 ? (
+                        <div class="bg-gradient-to-b from-violet-950 to-zinc-950 p-6 rounded-[2rem] border border-violet-800/50 shadow-2xl flex flex-col h-[550px] overflow-hidden">
+                            <h3 class="font-black italic uppercase text-amber-400 text-center text-sm mb-3 tracking-wider shrink-0">
+                                Escalera de premios
+                            </h3>
+                            <div class="flex-1 flex flex-col-reverse min-h-0 gap-0.5 overflow-hidden">
+                                {prizeLevels.map((l) => {
+                                    const isCurrent = currentLevel?.id === l.id;
+                                    const isSafe = l.is_safe_level;
+                                    return (
+                                        <div class:list={[
+                                            "flex items-center justify-between gap-2 px-3 flex-1 min-h-0 text-white/90 font-bold text-[10px] sm:text-xs",
+                                            isCurrent && "bg-amber-500/90 text-zinc-900 rounded-r-lg -mr-1 pr-4",
+                                            !isCurrent && isSafe && "text-amber-300/90",
+                                            !isCurrent && !isSafe && "text-zinc-300"
+                                        ]}>
+                                            <span class="font-black tabular-nums w-5">{l.difficulty_order}</span>
+                                            <span class="text-amber-400/60">◆</span>
+                                            <span class="font-mono font-black flex-1 text-right truncate">{formatMoney(l.money_value)}</span>
+                                            {isSafe && !isCurrent && <Icon name="lucide:shield-check" class="w-3 h-3 text-amber-400/70 shrink-0" />}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div class="bg-white p-8 rounded-[3rem] border border-base-300 shadow-sm flex flex-col h-[550px]">
+                            <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">
+                                {isWaiting ? 'Lobby' : 'Respuestas'}
+                            </h3>
+                            <div id="live-container" class="flex-1 overflow-y-auto space-y-2 pr-2">
+                                {isWaiting && <div id="players-grid" class="grid grid-cols-2 gap-2"></div>}
+                                {isActive && <div id="responders-list" class="space-y-2"></div>}
+                            </div>
+                        </div>
+                    )}
                 </div>
         )}
     </div>
 </DashboardLayout>
 
-<script is:inline define:vars={{ round, isWaiting, isActive }}>
+<script is:inline define:vars={{ round, isWaiting, isActive, isFinished, isClasico }}>
     let procesados = new Set();
+    let respondidosProcesados = new Set();
+
+    async function fetchAudienceVotes() {
+        const box = document.getElementById('audience-votes-box');
+        const chart = document.getElementById('audience-chart');
+        if (!box || !chart || !round?.current_question_id) return;
+        try {
+            const r = await fetch(`/api/audience-votes?round_id=${round.id}&question_id=${round.current_question_id}`);
+            const data = await r.json();
+            if (!data.votes) return;
+            const letters = data.letters || ['A','B','C','D'];
+            const total = data.total || 1;
+            chart.innerHTML = letters.map(function(l) {
+                const v = data.votes[l] || 0;
+                const pct = total > 0 ? Math.round((v/total)*100) : 0;
+                return '<div class="flex items-center gap-2"><span class="w-6 font-black">'+l+'</span><div class="flex-1 h-8 bg-zinc-800 rounded-lg overflow-hidden"><div class="h-full bg-violet-500 rounded-lg transition-all" style="width:'+pct+'%"></div></div><span class="w-12 text-right font-bold">'+v+' ('+pct+'%)</span></div>';
+            }).join('');
+        } catch (_) {}
+    }
 
     async function sync() {
-        const client = window.supabaseClient;
-        if (!client) return;
+        if (isFinished) return;
 
-        if (isWaiting) {
-            const { data: alumnos } = await client.from('event_players').select('player_id, players(name)').eq('event_id', round.event_id).eq('classroom_group_id', round.classroom_group_id);
-            alumnos?.forEach(a => {
-                if (!procesados.has(a.player_id)) {
-                    procesados.add(a.player_id);
-                    const div = document.createElement('div');
-                    div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
-                    div.innerText = a.players.name;
-                    document.getElementById('players-grid')?.appendChild(div);
-                }
-            });
-        }
+        try {
+            const res = await fetch(`/api/control/responders?round_id=${round.id}`);
+            if (!res.ok) return;
+            const data = await res.json();
 
-        if (isActive && round.current_question_id) {
-            const { data: respuestas } = await client.from('game_answers').select('player_id, players(name)').eq('question_id', round.current_question_id).eq('round_id', round.id);
-            if (respuestas) {
-                document.getElementById('answered-count').innerText = respuestas.length;
-                respuestas.forEach(r => {
-                    const idDom = `resp-${r.player_id}`;
-                    if (!document.getElementById(idDom)) {
-                        const div = document.createElement('div');
-                        div.id = idDom;
-                        div.className = "p-4 bg-green-50 text-green-700 rounded-2xl text-xs font-bold flex justify-between border border-green-100 animate-in slide-in-from-right";
-                        div.innerHTML = `<span>${r.players.name}</span> <span>✓</span>`;
-                        document.getElementById('responders-list')?.prepend(div);
+            // 1. CONECTADOS (Lobby - no en Clásico)
+            if (data.connected && !isClasico) {
+                data.connected.forEach(a => {
+                    if (!procesados.has(a.player_id)) {
+                        procesados.add(a.player_id);
+                        if (isWaiting) {
+                            const grid = document.getElementById('players-grid');
+                            if (grid) {
+                                const div = document.createElement('div');
+                                div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
+                                div.innerText = a.name || 'Anónimo';
+                                grid.appendChild(div);
+                            }
+                        }
                     }
                 });
             }
-        }
+
+            // 2. RESPONDIERON (Radar de respuestas; en Clásico solo actualizamos el contador, no la lista)
+            if (isActive && data.responders) {
+                const countEl = document.getElementById('answered-count');
+                const list = document.getElementById('responders-list');
+                if (countEl) countEl.innerText = data.responders.length;
+                if (list && !isClasico) {
+                    data.responders.forEach(r => {
+                        if (!respondidosProcesados.has(r.player_id)) {
+                            respondidosProcesados.add(r.player_id);
+                            const div = document.createElement('div');
+                            div.className = "p-4 bg-green-50 text-green-700 rounded-2xl text-xs font-bold flex justify-between border border-green-100 animate-in slide-in-from-right";
+                            const s1 = document.createElement('span');
+                            s1.textContent = r.name || 'Estudiante';
+                            div.appendChild(s1);
+                            div.appendChild(document.createTextNode(' '));
+                            const s2 = document.createElement('span');
+                            s2.textContent = '✓';
+                            div.appendChild(s2);
+                            list.prepend(div);
+                        }
+                    });
+                }
+            }
+
+            // 2b. CLÁSICO: selección del estudiante (marcó opción)
+            if (isClasico && data.student_selection) {
+                const box = document.getElementById('student-selection-box');
+                const text = document.getElementById('student-selection-text');
+                if (box && text) {
+                    const sel = data.student_selection;
+                    text.textContent = `Opción ${sel.letter}: ${sel.answer_text || '(sin texto)'}`;
+                    box.classList.remove('hidden');
+                }
+            }
+
+            // 3. MENTE MÁS RÁPIDA: intentos y ganador
+            if (data.status === 'fastest_finger' && data.fastest_finger_attempts) {
+                const countEl = document.getElementById('answered-count');
+                const attemptsList = document.getElementById('ff-attempts-list');
+                const winnerBox = document.getElementById('ff-winner-box');
+                const winnerName = document.getElementById('ff-winner-name');
+                const winnerPlayerId = document.getElementById('ff-winner-player-id');
+                if (countEl) countEl.innerText = data.fastest_finger_attempts.length;
+                if (attemptsList) {
+                    attemptsList.innerHTML = '';
+                    const correct = data.fastest_finger_attempts.filter(a => a.is_correct).sort((a,b) => a.response_time_ms - b.response_time_ms);
+                    data.fastest_finger_attempts.forEach(a => {
+                        const div = document.createElement('div');
+                        div.className = `p-3 rounded-xl text-xs font-bold flex justify-between ${a.is_correct ? 'bg-green-500/20 text-green-400' : 'bg-red-500/10 text-red-400'}`;
+                        div.innerHTML = `<span>${a.name || 'Estudiante'}</span><span>${(a.response_time_ms/1000).toFixed(2)}s ${a.is_correct ? '✓' : '✗'}</span>`;
+                        attemptsList.appendChild(div);
+                    });
+                    if (correct.length > 0 && winnerBox && winnerName && winnerPlayerId) {
+                        winnerBox.classList.remove('hidden');
+                        winnerName.textContent = correct[0].name || 'Estudiante';
+                        winnerPlayerId.value = correct[0].player_id;
+                    }
+                }
+            }
+        } catch (_) {}
     }
 
-    // Recarga automática si el docente presiona botones
+    // Detector de cambios (Recarga si el profe lanza otra pregunta o termina)
     setInterval(async () => {
-        const { data } = await window.supabaseClient.from('event_rounds').select('current_question_id, status').eq('id', round.id).single();
-        if (data && (data.current_question_id !== round.current_question_id || data.status !== round.status)) {
-            window.location.reload();
-        }
+        try {
+            const res = await fetch(`/api/control/responders?round_id=${round.id}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            if (String(data.current_question_id) !== String(round.current_question_id) || data.status !== round.status) {
+                window.location.reload();
+            }
+        } catch (_) {}
     }, 4000);
 
+    document.querySelectorAll('.lifeline-ajax').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            if (btn.disabled) return;
+            var code = btn.getAttribute('data-lifeline');
+            var roundId = btn.getAttribute('data-round');
+            var questionId = btn.getAttribute('data-question');
+            if (!code || !roundId || !questionId) return;
+            if (code === 'publico' && !confirm('¿Activar Ayuda del público?')) return;
+            if (code === 'llamada' && !confirm('¿Usar Llamada a docente?')) return;
+            btn.disabled = true;
+            btn.classList.add('bg-zinc-700/50', 'border-zinc-600', 'text-zinc-500', 'cursor-not-allowed');
+            btn.classList.remove('bg-amber-500/30', 'border-amber-500/60', 'text-amber-300');
+            btn.textContent = btn.textContent.replace(/\s*$/, ' (usado)');
+            fetch('/api/use-lifeline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ round_id: roundId, question_id: questionId, lifeline_code: code }),
+                credentials: 'same-origin'
+            }).then(function(r) { return r.json(); }).then(function(data) {
+                if (data.error) { alert(data.error); btn.disabled = false; }
+                else if (code === 'publico') {
+                    var box = document.getElementById('audience-votes-box');
+                    if (box) { box.classList.remove('hidden'); fetchAudienceVotes(); }
+                }
+            }).catch(function() { btn.disabled = false; });
+        });
+    });
+
     sync();
-    setInterval(sync, 2500);
+    setInterval(sync, 2000);
+    if (document.getElementById('audience-votes-box')) {
+        fetchAudienceVotes();
+        setInterval(fetchAudienceVotes, 3000);
+    }
 </script>

@@ -22,6 +22,21 @@ const { data: round, error } = await Astro.locals.supabase
 
 if (error || !round || !player) return Astro.redirect("/play?error=sesion_invalida");
 
+const gameModeId = round.events?.game_mode_id;
+const isMenteRapida = gameModeId === 3;
+
+// Mente más Rápida terminada: redirigir a todos (el ganador entra por /play/silla-caliente)
+if (isMenteRapida && round.status === 'finished') {
+    return Astro.redirect("/play?error=fin_participacion");
+}
+
+// Evitar bucle: si venimos de un error en fastest, no redirigir de vuelta
+const fromFastestError = Astro.url.searchParams.get('from') === 'fastest_error';
+if (!fromFastestError) {
+    if (round.status === 'fastest_finger') return Astro.redirect(`/play/fastest/${round_id}`);
+    if (round.status === 'active') return Astro.redirect(`/play/game/${round_id}`);
+}
+
 // 2. Paleta de Degradados Gamer (Vibrantes)
 const gradients = [
     'from-indigo-600 to-purple-900',
@@ -70,9 +85,24 @@ const myGradient = gradients[player.id % gradients.length];
                     </div>
 
                     <!-- Indicador de conexión -->
-                    <div class="flex items-center gap-3 bg-black/30 px-8 py-3 rounded-2xl border border-white/5 shadow-inner">
-                        <span class="loading loading-spinner loading-xs text-white"></span>
-                        <span class="text-[10px] font-black uppercase tracking-[0.2em] text-white/90">Sincronizando...</span>
+                    <div class="flex flex-col items-center gap-3">
+                        {fromFastestError ? (
+                            <div class="bg-amber-500/20 border border-amber-500/50 rounded-2xl px-6 py-4 text-center">
+                                <p class="text-amber-200 text-sm font-bold mb-2">El reto aún no está listo</p>
+                                <p class="text-white/70 text-xs mb-3">Espera unos segundos y haz clic para reintentar.</p>
+                                <a href={`/play/fastest/${round_id}`} class="btn btn-sm btn-warning">Reintentar</a>
+                            </div>
+                        ) : (
+                            <>
+                                <div class="flex items-center gap-3 bg-black/30 px-8 py-3 rounded-2xl border border-white/5 shadow-inner">
+                                    <span class="loading loading-spinner loading-xs text-white"></span>
+                                    <span class="text-[10px] font-black uppercase tracking-[0.2em] text-white/90">Sincronizando...</span>
+                                </div>
+                                <a href={`/play/fastest/${round_id}`} class="text-white/60 hover:text-white text-[10px] font-bold underline underline-offset-2 transition-colors">
+                                    ¿El docente ya activó Mente más Rápida? Entra aquí
+                                </a>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
@@ -114,10 +144,14 @@ const myGradient = gradients[player.id % gradients.length];
     <script is:inline define:vars={{ roundId: round_id }}>
         let yaRedirigido = false;
 
-        function irAlJuego() {
+        function irAlJuego(status) {
             if (yaRedirigido) return;
             yaRedirigido = true;
-            window.location.href = `/play/game/${roundId}`;
+            if (status === 'fastest_finger') {
+                window.location.href = `/play/fastest/${roundId}`;
+            } else {
+                window.location.href = `/play/game/${roundId}`;
+            }
         }
 
         async function verificarStatus() {
@@ -125,7 +159,7 @@ const myGradient = gradients[player.id % gradients.length];
             const client = window.supabaseClient;
             if (!client) return;
             const { data } = await client.from('event_rounds').select('status').eq('id', roundId).maybeSingle();
-            if (data?.status === 'active') irAlJuego();
+            if (data?.status === 'active' || data?.status === 'fastest_finger') irAlJuego(data.status);
         }
 
         function conectar() {
@@ -136,11 +170,13 @@ const myGradient = gradients[player.id % gradients.length];
             client.channel(`room-${roundId}`)
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'event_rounds', filter: `id=eq.${roundId}` },
                     (payload) => {
-                        if (payload.new.status === 'active') irAlJuego();
+                        const s = payload.new?.status;
+                        if (s === 'active' || s === 'fastest_finger') irAlJuego(s);
                     })
                 .subscribe();
 
-            // Polling (Failsafe)
+            // Polling (Failsafe) + verificación inmediata
+            verificarStatus();
             setInterval(verificarStatus, 2500);
         }
 

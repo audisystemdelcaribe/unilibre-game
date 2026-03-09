@@ -5,6 +5,11 @@ import { Icon } from 'astro-icon/components';
 import DeleteModal from "../../components/DeleteModal.astro";
 import FormButton from "../../components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: profile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redirect("/dashboard");
+
 const result = Astro.getActionResult(actions.saveQuestion) || Astro.getActionResult(actions.deleteQuestion);
 
 // --- LÓGICA DE FILTROS, BÚSQUEDA Y PAGINACIÓN ---
@@ -355,7 +360,9 @@ const { data: allSubjects } = await Astro.locals.supabase.from('subjects').selec
             const id = btn.getAttribute('data-id');
             const text = btn.getAttribute('data-text');
             (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
-            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML = `¿Eliminar pregunta: <strong>"${text}"</strong>?`;
+            const msgEl = document.getElementById('modal_delete-message') as HTMLElement;
+            msgEl.textContent = '';
+            msgEl.append('¿Eliminar pregunta: ', Object.assign(document.createElement('strong'), { textContent: `"${text || ''}"` }), '?');
             (document.getElementById('modal_delete') as any).showModal();
         });
     });

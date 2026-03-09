@@ -5,6 +5,11 @@ import { Icon } from 'astro-icon/components';
 import DeleteModal from "../../components/DeleteModal.astro";
 import FormButton from "@/components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: myProfile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (myProfile?.role !== 'admin') return Astro.redirect("/dashboard");
+
 // 1. Obtener Programas con el nombre de su facultad (JOIN)
 const { data: programs } = await Astro.locals.supabase
   .from('programs')
@@ -157,8 +162,9 @@ const result = Astro.getActionResult(actions.saveProgram) || Astro.getActionResu
             const name = btn.getAttribute('data-name');
 
             (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
-            (document.getElementById('modal_delete-message') as HTMLElement).innerHTML =
-                `¿Estás seguro de eliminar el programa <strong>${name}</strong>?`;
+            const msgEl = document.getElementById('modal_delete-message') as HTMLElement;
+            msgEl.textContent = '';
+            msgEl.append('¿Estás seguro de eliminar el programa ', Object.assign(document.createElement('strong'), { textContent: name || '' }), '?');
             (document.getElementById('modal_delete') as any).showModal();
         });
     });

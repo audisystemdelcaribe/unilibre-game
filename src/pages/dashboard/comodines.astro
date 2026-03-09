@@ -5,6 +5,11 @@ import { Icon } from 'astro-icon/components';
 import DeleteModal from "../../components/DeleteModal.astro";
 import FormButton from "../../components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: myProfile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (myProfile?.role !== 'admin') return Astro.redirect("/dashboard");
+
 const result = Astro.getActionResult(actions.saveLifeline) || Astro.getActionResult(actions.deleteLifeline);
 
 // Obtener la lista de comodines
@@ -40,6 +45,7 @@ const { data: lifelines } = await Astro.locals.supabase
                                 <button class="btn btn-ghost btn-sm text-primary btn-edit"
                                         data-id={l.id}
                                         data-name={l.name}
+                                        data-code={l.code || ''}
                                         data-desc={l.description || ''}>
                                     <Icon name="lucide:pencil" class="w-4 h-4" />
                                 </button>
@@ -88,6 +94,14 @@ const { data: lifelines } = await Astro.locals.supabase
 
                 <div class="form-control">
                     <label class="label">
+                        <span class="label-text font-black text-[10px] uppercase text-slate-400">Código (para funcionalidad)</span>
+                    </label>
+                    <input name="code" id="f_code" type="text" class="input input-bordered w-full font-mono text-sm" placeholder="5050, saltar, llamada, publico" />
+                    <p class="label-text-alt text-slate-400 mt-1">5050=eliminar 2 opciones, saltar=omitir pregunta, llamada/publico=simulación</p>
+                </div>
+
+                <div class="form-control">
+                    <label class="label">
                         <span class="label-text font-black text-[10px] uppercase text-slate-400">Descripción / Reglas</span>
                     </label>
                     <textarea name="description" id="f_desc" class="textarea textarea-bordered h-32 w-full" placeholder="Explica cómo funciona este comodín..."></textarea>
@@ -127,6 +141,7 @@ const { data: lifelines } = await Astro.locals.supabase
             const id = btn.getAttribute('data-id');
             (document.getElementById('f_id') as HTMLInputElement).value = id || '';
             (document.getElementById('f_name') as HTMLInputElement).value = btn.getAttribute('data-name') || '';
+            (document.getElementById('f_code') as HTMLInputElement).value = btn.getAttribute('data-code') || '';
             (document.getElementById('f_desc') as HTMLTextAreaElement).value = btn.getAttribute('data-desc') || '';
 
             (document.getElementById('modal_title') as HTMLElement).innerText = 'EDITAR COMODÍN';
@@ -143,7 +158,10 @@ const { data: lifelines } = await Astro.locals.supabase
             const msg = document.getElementById('modal_delete-message');
 
             if (inputId) inputId.value = id || '';
-            if (msg) msg.innerHTML = `¿Estás seguro de eliminar el comodín <strong>${name}</strong>?`;
+            if (msg) {
+                msg.textContent = '';
+                msg.append('¿Estás seguro de eliminar el comodín ', Object.assign(document.createElement('strong'), { textContent: name || '' }), '?');
+            }
 
             (document.getElementById('modal_delete') as any).showModal();
         });

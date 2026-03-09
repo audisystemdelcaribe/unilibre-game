@@ -5,6 +5,11 @@ import { Icon } from 'astro-icon/components';
 import DeleteModal from "../../components/DeleteModal.astro";
 import FormButton from "../../components/FormButton.astro";
 
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: profile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redirect("/dashboard");
+
 const result = Astro.getActionResult(actions.saveSequence) || Astro.getActionResult(actions.deleteSequence);
 
 const { data: sequences } = await Astro.locals.supabase
@@ -117,13 +122,22 @@ const { data: sequences } = await Astro.locals.supabase
     function createItemRow(value = '') {
         const div = document.createElement('div');
         div.className = "flex items-center gap-2 group item-row";
-        div.innerHTML = `
-            <div class="flex-none w-8 h-8 rounded-full bg-zinc-200 text-zinc-500 flex items-center justify-center font-black text-xs row-number">0</div>
-            <input type="text" required class="input input-bordered input-sm flex-1 font-bold item-input" value="${value}" placeholder="Escribir elemento..." />
-            <button type="button" class="btn btn-sm btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity remove-row-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            </button>
-        `;
+        const numDiv = document.createElement('div');
+        numDiv.className = "flex-none w-8 h-8 rounded-full bg-zinc-200 text-zinc-500 flex items-center justify-center font-black text-xs row-number";
+        numDiv.textContent = "0";
+        const input = document.createElement('input');
+        input.type = "text";
+        input.required = true;
+        input.className = "input input-bordered input-sm flex-1 font-bold item-input";
+        input.value = value;
+        input.placeholder = "Escribir elemento...";
+        const btn = document.createElement('button');
+        btn.type = "button";
+        btn.className = "btn btn-sm btn-ghost text-error opacity-0 group-hover:opacity-100 transition-opacity remove-row-btn";
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
+        div.appendChild(numDiv);
+        div.appendChild(input);
+        div.appendChild(btn);
 
         // Lógica para borrar fila
         div.querySelector('.remove-row-btn')?.addEventListener('click', () => {
@@ -213,7 +227,13 @@ const { data: sequences } = await Astro.locals.supabase
 
             if (inputId) inputId.value = id || '';
             if (msg) {
-                msg.innerHTML = `¿Estás seguro de eliminar el reto: <strong>"${title}"</strong>? <br><small class="text-error">Esta acción borrará también todos los elementos a ordenar.</small>`;
+                msg.textContent = '';
+                msg.append('¿Estás seguro de eliminar el reto: ', Object.assign(document.createElement('strong'), { textContent: `"${title || ''}"` }), '? ');
+                const small = document.createElement('small');
+                small.className = 'text-error';
+                small.textContent = 'Esta acción borrará también todos los elementos a ordenar.';
+                msg.appendChild(document.createElement('br'));
+                msg.appendChild(small);
             }
 
             if (modal) {
