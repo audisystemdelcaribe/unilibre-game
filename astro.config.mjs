@@ -3,11 +3,11 @@ import tailwindcss from '@tailwindcss/vite';
 import node from '@astrojs/node';
 import icon from 'astro-icon';
 
+import vercel from '@astrojs/vercel';
+
 export default defineConfig({
     output: 'server',
-    adapter: node({
-        mode: 'standalone',
-    }),
+    adapter: vercel(),
     integrations: [
         icon()
     ],
