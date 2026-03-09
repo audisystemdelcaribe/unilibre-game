@@ -1,0 +1,290 @@
+---
+import PlayLayout from "../../../layouts/PlayLayout.astro";
+import { actions } from "astro:actions";
+import { supabaseAdmin } from "../../../lib/supabaseAdmin";
+
+const { round_id } = Astro.params;
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+const rId = parseInt(String(round_id));
+if (isNaN(rId)) return Astro.redirect("/play?error=ronda_no_encontrada");
+
+// Usar supabaseAdmin para round y ffRound: evita RLS que puede bloquear al estudiante
+const { data: round } = await supabaseAdmin
+    .from('event_rounds')
+    .select('*, events(name)')
+    .eq('id', rId)
+    .single();
+
+if (!round || round.status !== 'fastest_finger') return Astro.redirect(`/play/waiting/${round_id}`);
+
+// Fetch en dos pasos: evita problemas con embeds en PostgREST
+const { data: ffRoundBase, error: ffError } = await supabaseAdmin
+    .from('fastest_finger_rounds')
+    .select('id, sequence_id, event_round_id, started_at')
+    .eq('event_round_id', rId)
+    .maybeSingle();
+
+if (ffError) {
+    console.error('[fastest] ffRound error:', ffError.message, 'round_id:', rId);
+    return Astro.redirect(`/play/waiting/${round_id}?from=fastest_error`);
+}
+
+if (!ffRoundBase) {
+    console.error('[fastest] ffRound no existe para event_round_id:', rId);
+    return Astro.redirect(`/play/waiting/${round_id}?from=fastest_error`);
+}
+
+// Obtener secuencia e ítems por separado
+const { data: sequence } = await supabaseAdmin
+    .from('fastest_finger_sequences')
+    .select('title')
+    .eq('id', ffRoundBase.sequence_id)
+    .single();
+
+const { data: itemsData } = await supabaseAdmin
+    .from('fastest_finger_items')
+    .select('id, text, correct_position')
+    .eq('sequence_id', ffRoundBase.sequence_id)
+    .order('correct_position');
+
+const ffRound = {
+    ...ffRoundBase,
+    fastest_finger_sequences: sequence,
+    fastest_finger_items: itemsData ?? []
+};
+
+const { data: player } = await Astro.locals.supabase
+    .from('players')
+    .select('id, name')
+    .eq('auth_user_id', user.id)
+    .single();
+
+if (!player) return Astro.redirect("/");
+
+const { data: inEvent } = await Astro.locals.supabase
+    .from('event_players')
+    .select('player_id')
+    .eq('event_id', round.event_id)
+    .eq('player_id', player.id)
+    .maybeSingle();
+
+if (!inEvent) return Astro.redirect("/play?error=debes_unirte_con_pin");
+
+function shuffle<T>(arr: T[]): T[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+const rawItems = ffRound.fastest_finger_items ?? [];
+const items = shuffle(Array.isArray(rawItems) ? rawItems : []);
+const startTime = round.question_started_at || new Date().toISOString();
+const questionTitle = (ffRound.fastest_finger_sequences as { title?: string } | null)?.title ?? 'Ordena los ítems en el orden correcto';
+
+const submitError = Astro.url.searchParams.get('error');
+---
+
+<PlayLayout title="Mente más Rápida">
+    <div class="flex flex-col min-h-screen p-4 bg-zinc-950 text-white font-sans">
+        <header class="text-center py-4">
+            <p class="text-primary font-black uppercase text-[10px] tracking-widest mb-2">Mente más Rápida</p>
+            <h1 class="text-2xl md:text-3xl font-black italic leading-tight">
+                {questionTitle}
+            </h1>
+        </header>
+
+        <main class="flex-1 flex flex-col justify-center max-w-lg mx-auto w-full">
+            <div class="space-y-6">
+                    <p class="text-center text-zinc-400 text-sm">Toca los ítems en el orden correcto. Toca de nuevo para deshacer.</p>
+                    {items.length === 0 && (
+                        <div class="p-6 bg-amber-500/20 border border-amber-500/50 rounded-2xl text-amber-400 text-center">
+                            <p class="font-bold mb-2">No hay ítems para ordenar</p>
+                            <p class="text-sm mb-4">La secuencia no tiene elementos configurados. Avisa al docente.</p>
+                            <a href={`/play/waiting/${round_id}`} class="btn btn-sm btn-warning">Volver a sala de espera</a>
+                        </div>
+                    )}
+                    {submitError && (
+                        <div class="p-4 bg-red-500/20 border border-red-500/50 rounded-2xl text-red-400 text-sm">{submitError}</div>
+                    )}
+
+                    {items.length > 0 && (
+                    <form id="ff-form" class="space-y-4">
+                        <input type="hidden" name="ff_round_id" value={ffRound.id} />
+                        <input type="hidden" name="event_round_id" value={round_id} />
+                        <input type="hidden" name="selected_order" id="selected-order" value="[]" />
+
+                        <div id="items-container" class="space-y-3">
+                            {items.map((item: { id: number; text: string }, idx: number) => (
+                                <button
+                                    type="button"
+                                    data-item-id={String(item.id)}
+                                    class="ff-item w-full p-5 rounded-2xl bg-zinc-900 border-2 border-zinc-700 text-left font-bold text-lg transition-all flex items-center gap-4 cursor-pointer hover:border-zinc-600"
+                                >
+                                    <span class="order-badge hidden w-10 h-10 rounded-xl bg-primary text-white shrink-0 inline-flex items-center justify-center text-lg font-black"></span>
+                                    <span class="item-text">{item.text}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        <button type="submit" id="btn-submit" disabled class="btn btn-primary w-full py-4 font-black opacity-50 cursor-not-allowed">
+                            Enviar orden
+                        </button>
+                    </form>
+                    )}
+                </div>
+        </main>
+    </div>
+
+    <script is:inline define:vars={{ startTime, itemCount: items.length, eventRoundId: round_id }}>
+        (function() {
+            var startMs = new Date(startTime).getTime();
+            var selectedOrder = [];
+
+            function updateUI() {
+                var form = document.getElementById('ff-form');
+                if (!form) return;
+
+                var items = form.querySelectorAll('.ff-item');
+                items.forEach(function(btn) {
+                    var id = parseInt(btn.getAttribute('data-item-id') || '0', 10);
+                    var idx = selectedOrder.indexOf(id);
+                    var badge = btn.querySelector('.order-badge');
+                    if (idx >= 0) {
+                        btn.classList.add('!border-primary', '!bg-primary/20');
+                        btn.classList.remove('border-zinc-700');
+                        if (badge) {
+                            badge.classList.remove('hidden');
+                            badge.classList.add('inline-flex');
+                            badge.textContent = String(idx + 1);
+                        }
+                    } else {
+                        btn.classList.remove('!border-primary', '!bg-primary/20');
+                        btn.classList.add('border-zinc-700');
+                        if (badge) {
+                            badge.classList.add('hidden');
+                            badge.classList.remove('inline-flex');
+                        }
+                    }
+                });
+
+                var submitBtn = document.getElementById('btn-submit');
+                if (submitBtn) {
+                    var allSelected = selectedOrder.length === itemCount;
+                    submitBtn.disabled = !allSelected;
+                    submitBtn.classList.toggle('opacity-50', !allSelected);
+                    submitBtn.classList.toggle('cursor-not-allowed', !allSelected);
+                    submitBtn.classList.toggle('!opacity-100', allSelected);
+                    submitBtn.classList.toggle('cursor-pointer', allSelected);
+                }
+            }
+
+            function init() {
+                var form = document.getElementById('ff-form');
+                if (!form) return;
+
+                form.querySelectorAll('.ff-item').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var id = parseInt(btn.getAttribute('data-item-id') || '0', 10);
+                        var idx = selectedOrder.indexOf(id);
+                        if (idx >= 0) {
+                            selectedOrder.splice(idx, 1);
+                        } else if (selectedOrder.length < itemCount) {
+                            selectedOrder.push(id);
+                        }
+                        updateUI();
+                    });
+                });
+
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    if (selectedOrder.length !== itemCount) return;
+
+                    var submitBtn = document.getElementById('btn-submit');
+                    if (submitBtn) submitBtn.disabled = true;
+
+                    var orderInput = document.getElementById('selected-order');
+                    if (orderInput) orderInput.value = JSON.stringify(selectedOrder);
+
+                    var formData = new FormData(form);
+                    formData.set('response_time_ms', String(Date.now() - startMs));
+
+                    fetch('/api/fastest-finger-submit', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'same-origin'
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        var main = document.querySelector('main');
+                        if (main && data.success) {
+                            form.remove();
+                            var resultHtml;
+                            if (data.correct) {
+                                resultHtml = '<div class="text-center animate-in zoom-in" id="ff-result-box">' +
+                                    '<div class="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 bg-success">' +
+                                    '<span class="text-4xl">✓</span></div>' +
+                                    '<h2 class="text-3xl font-black uppercase">¡Correcto!</h2>' +
+                                    '<p class="text-zinc-400 mt-2">Tiempo: ' + data.time + 's</p>' +
+                                    '<p id="ff-winner-msg" class="text-zinc-500 mt-4 text-sm">Esperando que el docente confirme al ganador...</p>' +
+                                    '<div id="ff-winner-link" class="hidden mt-6"></div>' +
+                                    '</div>';
+                            } else {
+                                resultHtml = '<div class="text-center animate-in zoom-in">' +
+                                    '<div class="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6 bg-error">' +
+                                    '<span class="text-4xl">✗</span></div>' +
+                                    '<h2 class="text-3xl font-black uppercase">¡Incorrecto!</h2>' +
+                                    '<p class="text-zinc-400 mt-4">No fuiste el más rápido esta vez.</p>' +
+                                    '<p class="text-zinc-500 text-sm mt-6">Fin de tu participación.</p>' +
+                                    '<a href="/play" class="btn btn-ghost mt-6">Volver al inicio</a>' +
+                                    '</div>';
+                            }
+                            main.innerHTML = resultHtml;
+                            if (data.correct) {
+                                var rId = typeof eventRoundId !== 'undefined' ? String(eventRoundId) : '';
+                                (function pollWinner() {
+                                    fetch('/api/fastest-winner-status?round_id=' + rId, { credentials: 'same-origin' })
+                                        .then(function(r) { return r.json(); })
+                                        .then(function(status) {
+                                            var msgEl = document.getElementById('ff-winner-msg');
+                                            var linkEl = document.getElementById('ff-winner-link');
+                                            if (status.finished && msgEl && linkEl) {
+                                                if (status.isWinner) {
+                                                    msgEl.textContent = '¡Eres el ganador! Pasa a la Silla Caliente.';
+                                                    msgEl.className = 'text-success font-bold mt-4';
+                                                    linkEl.innerHTML = '<a href="/play/silla-caliente" class="btn btn-warning font-black">Entrar a Silla Caliente</a>';
+                                                    linkEl.classList.remove('hidden');
+                                                } else {
+                                                    msgEl.textContent = 'Correcto, pero no fuiste el más rápido. El ganador pasará a Silla Caliente.';
+                                                    msgEl.className = 'text-zinc-400 mt-4';
+                                                    linkEl.innerHTML = '<p class="text-zinc-500 text-sm mt-2">Fin de tu participación.</p><a href="/play" class="btn btn-ghost mt-4">Volver al inicio</a>';
+                                                    linkEl.classList.remove('hidden');
+                                                }
+                                            }
+                                            if (!status.finished) setTimeout(pollWinner, 2000);
+                                        });
+                                })();
+                            }
+                        } else if (data.error) {
+                            alert(data.error);
+                            if (submitBtn) submitBtn.disabled = false;
+                        }
+                    })
+                    .catch(function(err) {
+                        alert(err.message || 'Error al enviar');
+                        if (submitBtn) submitBtn.disabled = false;
+                    });
+                });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+        })();
+    </script>
+</PlayLayout>

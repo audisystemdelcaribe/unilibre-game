@@ -1,0 +1,720 @@
+diff --git a/src/actions/index.ts b/src/actions/index.ts
+index 7e82ed5..6b3da73 100644
+--- a/src/actions/index.ts
++++ b/src/actions/index.ts
+@@ -2,17 +2,17 @@ import { facultiesActions } from './modules/faculties';
+ import { programsActions } from './modules/programs';
+ import { subjectsActions } from './modules/subjects';
+ import { seasonsActions } from './modules/seasons';
+-import { usersActions } from './modules/users';
+-import { gameLevelsActions } from './modules/game_levels.ts'
++import { gameLevelsActions } from './modules/game_levels';
+ import { lifelinesActions } from './modules/lifelines';
+-import {gameModesActions} from './modules/game_modes';
+-import { questionsActions } from './modules/questions.ts'
++import { gameModesActions } from './modules/game_modes';
++import { questionsActions } from './modules/questions';
+ import { fastestFingerActions } from './modules/fastest_finger';
+ import { eventsActions } from './modules/events';
+ import { liveSessionsActions } from './modules/live_sessions';
+ import { authActions } from './modules/auth';
++import { usersActions } from './modules/users.ts'
+
+-export const server = {
++export const actions = {
+     ...facultiesActions,
+     ...programsActions,
+     ...subjectsActions,
+diff --git a/src/actions/modules/live_sessions.ts b/src/actions/modules/live_sessions.ts
+index ce1ac5c..4e51b9a 100644
+--- a/src/actions/modules/live_sessions.ts
++++ b/src/actions/modules/live_sessions.ts
+@@ -132,6 +132,8 @@ export const liveSessionsActions = {
+             return { success: true, message: "¡Pregunta lanzada a los estudiantes!" };
+         }
+     }),
++    // src/actions/modules/live_sessions.ts
++
+     submitAnswer: defineAction({
+         accept: 'form',
+         input: z.object({
+@@ -146,74 +148,52 @@ export const liveSessionsActions = {
+             const now = new Date().getTime();
+             const { round_id, question_id, answer_id, session_id } = input;
+
+-            console.log("--- PROCESANDO RESPUESTA ---");
+-            console.log("Input recibido:", input);
+-
+-            try {
+-                // 1. Obtener datos
+-                const [roundRes, questionRes, answerRes, playerRes] = await Promise.all([
+-                    supabaseAdmin.from('event_rounds').select('*').eq('id', parseInt(round_id)).single(),
+-                    supabaseAdmin.from('questions').select('*, game_levels(points, time_limit)').eq('id', parseInt(question_id)).single(),
+-                    supabaseAdmin.from('answers').select('is_correct').eq('id', parseInt(answer_id)).single(),
+-                    supabaseAdmin.from('players').select('id').eq('auth_user_id', user.id).single()
+-                ]);
+-
+-                if (!roundRes.data?.question_started_at) throw new Error("Pregunta no iniciada");
+-
+-                // 2. Tiempos y Puntos
+-                const startTime = new Date(roundRes.data.question_started_at).getTime();
+-                const responseMs = now - startTime;
+-                const isCorrect = answerRes.data?.is_correct || false;
+-                const basePoints = (questionRes.data?.game_levels as any)?.points || 1000;
+-                const durationMs = ((questionRes.data?.game_levels as any)?.time_limit || 30) * 1000;
+-
+-                let earnedPoints = 0;
+-                if (isCorrect) {
+-                    const ratio = Math.max(0, (durationMs - responseMs) / durationMs);
+-                    earnedPoints = Math.round(basePoints * (0.1 + (ratio * 0.9)));
+-                }
+-
+-                console.log(`Es correcto: ${isCorrect} | Puntos: ${earnedPoints} | Tiempo: ${responseMs}ms`);
+-
+-                // 3. Insertar en game_answers
+-                const { error: insErr } = await supabaseAdmin.from('game_answers').insert([{
+-                    game_session_id: parseInt(session_id),
+-                    round_id: parseInt(round_id),
+-                    event_id: roundRes.data.event_id,
+-                    player_id: playerRes.data!.id,
+-                    classroom_group_id: roundRes.data.classroom_group_id,
+-                    question_id: parseInt(question_id),
+-                    answer_id: parseInt(answer_id),
+-                    level_id: questionRes.data!.level_id,
+-                    is_correct: isCorrect,
+-                    response_time_ms: responseMs,
+-                    money_at_question: earnedPoints
+-                }]);
+-
+-                if (insErr) {
+-                    console.error("Error al insertar en DB:", insErr);
+-                    throw new Error(insErr.message);
+-                }
+-
+-                // 4. Sumar puntos
+-                if (earnedPoints > 0) {
+-                    await supabaseAdmin.rpc('increment_session_score', { s_id: parseInt(session_id), puntos: earnedPoints });
+-
+-                    // Actualizar event_players
+-                    const { data: currentEP } = await supabaseAdmin.from('event_players')
+-                        .select('score').eq('event_id', roundRes.data.event_id).eq('player_id', playerRes.data!.id).single();
+-
+-                    await supabaseAdmin.from('event_players').update({ score: (currentEP?.score || 0) + earnedPoints })
+-                        .eq('event_id', roundRes.data.event_id).eq('player_id', playerRes.data!.id);
+-                }
+-
+-                console.log("✅ TODO OK: Respuesta guardada");
+-                return { success: true, correct: isCorrect, points: earnedPoints, time: (responseMs / 1000).toFixed(2) };
+-
+-            } catch (e: any) {
+-                console.error("❌ ERROR EN ACCION:", e.message);
+-                throw new Error(e.message);
++            // 1. Obtener datos de la ronda para saber el grupo y el evento
++            const [roundRes, playerRes, answerRes, questionRes] = await Promise.all([
++                supabaseAdmin.from('event_rounds').select('*').eq('id', parseInt(round_id)).single(),
++                supabaseAdmin.from('players').select('id').eq('auth_user_id', user.id).single(),
++                supabaseAdmin.from('answers').select('is_correct').eq('id', parseInt(answer_id)).single(),
++                supabaseAdmin.from('questions').select('level_id, game_levels(points, time_limit)').eq('id', parseInt(question_id)).single()
++            ]);
++
++            if (!roundRes.data?.question_started_at) throw new Error("Pregunta no iniciada");
++
++            // 2. Cálculo de puntos y tiempo
++            const startTime = new Date(roundRes.data.question_started_at).getTime();
++            const responseMs = now - startTime;
++            const isCorrect = answerRes.data?.is_correct || false;
++            const basePoints = (questionRes.data?.game_levels as any)?.points || 1000;
++            const limitSeconds = (questionRes.data?.game_levels as any)?.time_limit || 30;
++
++            let earnedPoints = 0;
++            if (isCorrect) {
++                const ratio = Math.max(0, (limitSeconds * 1000 - responseMs) / (limitSeconds * 1000));
++                earnedPoints = Math.round(basePoints * (0.1 + (ratio * 0.9)));
++            }
++
++            // 3. GUARDAR RESPUESTA (Aquí está el truco para el docente)
++            const { error: insErr } = await supabaseAdmin.from('game_answers').insert([{
++                game_session_id: parseInt(session_id),
++                round_id: parseInt(round_id), // <--- Obligatorio
++                event_id: roundRes.data.event_id,
++                player_id: playerRes.data!.id,
++                classroom_group_id: roundRes.data.classroom_group_id, // <--- Obligatorio
++                question_id: parseInt(question_id),
++                answer_id: parseInt(answer_id),
++                level_id: questionRes.data!.level_id,
++                is_correct: isCorrect,
++                response_time_ms: responseMs,
++                money_at_question: earnedPoints
++            }]);
++
++            if (insErr) throw new Error(insErr.message);
++
++            // 4. Sumar puntos en la sesión
++            if (earnedPoints > 0) {
++                await supabaseAdmin.rpc('increment_session_score', { s_id: parseInt(session_id), puntos: earnedPoints });
+             }
++
++            return { success: true, correct: isCorrect, points: earnedPoints, time: (responseMs / 1000).toFixed(2) };
+         }
+     }),
+     launchRandomQuestion: defineAction({
+diff --git a/src/actions/modules/users.ts b/src/actions/modules/users.ts
+index d42f087..bec0341 100644
+--- a/src/actions/modules/users.ts
++++ b/src/actions/modules/users.ts
+@@ -1,6 +1,7 @@
+ import { defineAction } from 'astro:actions';
+ import { z } from 'astro:schema';
+-import { supabaseAdmin } from '../../lib/supabaseAdmin';
++import { supabaseAdmin } from '@/lib/supabaseAdmin';
++import { ensureAdmin } from '@/actions/utils';
+
+ export const usersActions = {
+     updateUserRole: defineAction({
+@@ -9,14 +10,49 @@ export const usersActions = {
+             player_id: z.string(),
+             role: z.enum(['admin', 'docente', 'player']),
+         }),
+-        handler: async ({ player_id, role }) => {
++        handler: async ({ player_id, role }, context) => {
++            await ensureAdmin(context);
+             const { error } = await supabaseAdmin
+                 .from('players')
+                 .update({ role })
+                 .eq('id', parseInt(player_id));
+
+             if (error) throw new Error(error.message);
+-            return { success: true };
++            return { success: true, message: "Rol de usuario actualizado correctamente" };
++        }
++    }),
++
++    deleteUser: defineAction({
++        accept: 'form',
++        input: z.object({
++            player_id: z.string(),
++        }),
++        handler: async ({ player_id }, context) => {
++            await ensureAdmin(context);
++
++            // 1. Obtener el auth_user_id antes de borrar el perfil
++            const { data: player } = await supabaseAdmin
++                .from('players')
++                .select('auth_user_id')
++                .eq('id', parseInt(player_id))
++                .single();
++
++            if (!player) throw new Error("Usuario no encontrado");
++
++            // 2. Borrar de la tabla players (el perfil)
++            const { error: pErr } = await supabaseAdmin
++                .from('players')
++                .delete()
++                .eq('id', parseInt(player_id));
++
++            if (pErr) throw new Error(pErr.message);
++
++            // 3. Borrar de Supabase Auth
++            const { error: aErr } = await supabaseAdmin.auth.admin.deleteUser(player.auth_user_id);
++            // No lanzamos error si falla el borrado de auth, porque el perfil ya no existe,
++            // pero sería ideal que ambos se borren.
++
++            return { success: true, message: "Usuario eliminado correctamente" };
+         }
+     })
+ };
+\ No newline at end of file
+diff --git a/src/pages/dashboard/eventos/control/[round_id].astro b/src/pages/dashboard/eventos/control/[round_id].astro
+index 0781a28..e0dab2b 100644
+--- a/src/pages/dashboard/eventos/control/[round_id].astro
++++ b/src/pages/dashboard/eventos/control/[round_id].astro
+@@ -5,82 +5,61 @@ import { actions } from "astro:actions";
+ import FormButton from "@/components/FormButton.astro";
+
+ const { round_id } = Astro.params;
+-const { data: round } = await Astro.locals.supabase
+-    .from('event_rounds').select('*, events(*)').eq('id', round_id).single();
+-
+-// 1. Cargar Ranking Final solo si el juego terminó
+-let rankingFinal = [];
+-if (round?.status === 'finished') {
+-    const { data } = await Astro.locals.supabase
+-        .from('event_players')
+-        .select('score, players(name)')
+-        .eq('event_id', round.event_id)
+-        .eq('classroom_group_id', round.classroom_group_id)
+-        .order('score', { ascending: false })
+-        .limit(10);
+-    rankingFinal = data || [];
++
++// 1. Obtener datos de la ronda y el evento
++const { data: round, error: roundError } = await Astro.locals.supabase
++    .from('event_rounds')
++    .select('*, events(*)')
++    .eq('id', round_id)
++    .single();
++
++// SEGURIDAD: Si no hay ronda, redirigimos antes de que cargue el script fallido
++if (roundError || !round) {
++    return Astro.redirect("/dashboard/eventos?error=sesion_no_encontrada");
+ }
+
+ // 2. Obtener texto de la pregunta actual
+-let qText = "Esperando...";
+-if (round?.current_question_id) {
+-    const { data: q } = await Astro.locals.supabase.from('questions').select('question_text').eq('id', round.current_question_id).single();
+-    qText = q?.question_text || "";
++let qText = "Esperando lanzamiento...";
++if (round.current_question_id) {
++    const { data: q } = await Astro.locals.supabase
++        .from('questions')
++        .select('question_text')
++        .eq('id', round.current_question_id)
++        .single();
++    if (q) qText = q.question_text;
+ }
+
+ const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound);
+-const isWaiting = round?.status === 'waiting';
+-const isFinished = round?.status === 'finished';
+-const isActive = round?.status === 'active';
+-
++const isWaiting = round.status === 'waiting';
++const isFinished = round.status === 'finished';
++const isActive = round.status === 'active';
+ ---
+
+-<DashboardLayout title="Control en Vivo" actionResult={result}>
++<DashboardLayout title="Control de Mando" actionResult={result}>
+     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
+
+-    <div class="max-w-5xl mx-auto space-y-6">
++    <div class="max-w-6xl mx-auto space-y-6">
+         {isFinished ? (
+             /* --- VISTA: PODIO FINAL --- */
+                 <div class="animate-in zoom-in duration-700 text-center py-10">
+                     <Icon name="lucide:trophy" class="w-32 h-32 text-yellow-500 mx-auto mb-6 drop-shadow-2xl" />
+-                    <h1 class="text-5xl font-black italic uppercase text-slate-800 mb-10">Ranking Final del Salón</h1>
+-
+-                    <div class="max-w-2xl mx-auto space-y-4">
+-                        {rankingFinal.map((res, idx) => (
+-                                <div class:list={[
+-                                    "flex items-center justify-between p-6 rounded-[2rem] border-2 shadow-lg transition-all",
+-                                    idx === 0 ? "bg-yellow-400 border-yellow-500 scale-105 mb-4 text-white" : "bg-white border-zinc-100 text-slate-700"
+-                                ]}>
+-                                    <div class="flex items-center gap-6">
+-                                        <span class="text-3xl font-black italic">{idx + 1}°</span>
+-                                        <span class="text-2xl font-bold uppercase tracking-tight">{res.players.name}</span>
+-                                    </div>
+-                                    <span class="text-3xl font-black font-mono">{res.score}</span>
+-                                </div>
+-                        ))}
++                    <h1 class="text-6xl font-black italic uppercase text-slate-800 mb-10">Ranking Final</h1>
++                    <div id="podium-container" class="max-w-2xl mx-auto space-y-4">
++                        <p class="text-slate-400 animate-pulse">Cargando resultados finales...</p>
+                     </div>
+-
+                     <script is:inline>
+-                        // Lanzar confeti al cargar el podio
+-                        <script is:inline>
+-                            // El docente siempre lanza confeti al terminar para celebrar con el salón
+-                            confetti({
+-                            particleCount: 200,
+-                            spread: 100,
+-                            origin: { y: 0.6 }
+-                        });
++                        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+                     </script>
+-
+                 </div>
+         ) : (
+-            /* --- LOBBY O JUEGO --- */
++            /* --- VISTA: LOBBY O JUEGO --- */
+                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                     <div class="lg:col-span-2 space-y-6">
+                         <div class="bg-zinc-900 text-white p-10 rounded-[3.5rem] border-b-8 border-primary shadow-2xl">
+                             {isWaiting ? (
+                                     <div class="text-center">
+                                         <p class="text-zinc-500 font-bold uppercase text-xs mb-4">PIN DE ACCESO</p>
+-                                        <h2 class="text-8xl font-black tracking-widest text-white">{round?.session_pin}</h2>
++                                        <h2 class="text-8xl font-black tracking-widest">{round.session_pin}</h2>
+                                     </div>
+                             ) : (
+                                     <div>
+@@ -97,23 +76,26 @@ const isActive = round?.status === 'active';
+                         <div class="flex gap-4">
+                             <form method="POST" action={actions.launchRandomQuestion} class="flex-1">
+                                 <input type="hidden" name="round_id" value={round_id} />
+-                                <FormButton class="btn-primary w-full h-24 text-xl font-black shadow-xl rounded-3xl">
++                                <FormButton class="btn-primary w-full h-24 text-xl font-black shadow-xl rounded-3xl uppercase italic">
+                                     {isWaiting ? 'INICIAR JUEGO 🚀' : 'SIGUIENTE PREGUNTA ➡️'}
+                                 </FormButton>
+                             </form>
+                             {isActive && (
+-                                    <form method="POST" action={actions.finishRound} onsubmit="return confirm('¿Finalizar el juego?')">
++                                    <form method="POST" action={actions.finishRound} onsubmit="return confirm('¿Terminar el juego?')">
+                                         <input type="hidden" name="round_id" value={round_id} />
+-                                        <button type="submit" class="btn btn-error h-24 px-8 text-white font-black rounded-3xl shadow-xl">TERMINAR</button>
++                                        <button type="submit" class="btn btn-error h-24 px-8 text-white font-black rounded-3xl shadow-xl uppercase italic">TERMINAR</button>
+                                     </form>
+                             )}
+                         </div>
+                     </div>
+
+                     <div class="bg-white p-8 rounded-[3rem] border border-base-300 shadow-sm flex flex-col h-[600px]">
+-                        <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">Progreso</h3>
+-                        <div id="responders-list" class="flex-1 overflow-y-auto space-y-2 pr-2">
++                        <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center" id="side-title">
++                            {isWaiting ? 'Estudiantes en el Lobby' : 'Respondieron'}
++                        </h3>
++                        <div id="status-list" class="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                             {isWaiting && <div id="players-grid" class="grid grid-cols-2 gap-2"></div>}
++                            {isActive && <div id="responders-list" class="space-y-2"></div>}
+                         </div>
+                     </div>
+                 </div>
+@@ -121,52 +103,101 @@ const isActive = round?.status === 'active';
+     </div>
+ </DashboardLayout>
+
+-<script is:inline define:vars={{ round, isWaiting, isActive }}>
+-    let procesados = new Set();
+-
+-    async function sync() {
+-        const client = window.supabaseClient;
+-        if (!client) return;
+-
+-        if (isWaiting) {
+-            const { data: alumnos } = await client.from('event_players').select('player_id, players(name)').eq('event_id', round.event_id).eq('classroom_group_id', round.classroom_group_id);
+-            alumnos?.forEach(a => {
+-                if (!procesados.has(a.player_id)) {
+-                    procesados.add(a.player_id);
+-                    const div = document.createElement('div');
+-                    div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
+-                    div.innerText = a.players.name;
+-                    document.getElementById('players-grid')?.appendChild(div);
+-                }
+-            });
+-        }
+-
+-        if (isActive && round.current_question_id) {
+-            const { data: respuestas } = await client.from('game_answers').select('player_id, players(name)').eq('question_id', round.current_question_id).eq('round_id', round.id);
+-            if (respuestas) {
+-                document.getElementById('answered-count').innerText = respuestas.length;
+-                respuestas.forEach(r => {
+-                    const idDom = `resp-${r.player_id}`;
+-                    if (!document.getElementById(idDom)) {
++<script is:inline define:vars={{ round, isWaiting, isActive, isFinished }}>
++    // PROTECCIÓN INICIAL: Si round es null, no ejecutar nada
++    if (!round) {
++        console.error("Error: El objeto 'round' no está definido.");
++    } else {
++        let procesados = new Set();
++        let respondidosProcesados = new Set();
++
++        async function sync() {
++            const client = window.supabaseClient;
++            if (!client) return;
++
++            // 1. LÓGICA LOBBY
++            if (isWaiting) {
++                const { data: alumnos } = await client
++                    .from('event_players')
++                    .select('player_id, players(name)')
++                    .eq('event_id', round.event_id)
++                    .eq('classroom_group_id', round.classroom_group_id);
++
++                alumnos?.forEach(a => {
++                    if (!procesados.has(a.player_id)) {
++                        procesados.add(a.player_id);
+                         const div = document.createElement('div');
+-                        div.id = idDom;
+-                        div.className = "p-4 bg-green-50 text-green-700 rounded-2xl text-xs font-bold flex justify-between border border-green-100 animate-in slide-in-from-right";
+-                        div.innerHTML = `<span>${r.players.name}</span> <span>✓</span>`;
+-                        document.getElementById('responders-list')?.prepend(div);
++                        div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
++                        div.innerText = a.players?.name || 'Anónimo';
++                        document.getElementById('players-grid')?.appendChild(div);
+                     }
+                 });
+             }
+-        }
+-    }
+
+-    // Recarga automática si el docente presiona botones
+-    setInterval(async () => {
+-        const { data } = await window.supabaseClient.from('event_rounds').select('current_question_id, status').eq('id', round.id).single();
+-        if (data && (data.current_question_id !== round.current_question_id || data.status !== round.status)) {
+-            window.location.reload();
++            // 2. LÓGICA RESPUESTAS EN VIVO
++            if (isActive && round.current_question_id) {
++                const { data: respuestas } = await client
++                    .from('game_answers')
++                    .select('player_id, players(name)')
++                    .eq('question_id', round.current_question_id)
++                    .eq('round_id', round.id);
++
++                if (respuestas) {
++                    const countEl = document.getElementById('answered-count');
++                    if (countEl) countEl.innerText = respuestas.length.toString();
++
++                    respuestas.forEach(r => {
++                        const idDom = `resp-${r.player_id}`;
++                        if (!respondidosProcesados.has(r.player_id)) {
++                            respondidosProcesados.add(r.player_id);
++                            const div = document.createElement('div');
++                            div.id = idDom;
++                            div.className = "p-4 bg-green-50 text-green-700 rounded-2xl text-xs font-bold flex justify-between border border-green-100 animate-in slide-in-from-right";
++                            div.innerHTML = `<span>${r.players?.name || 'Estudiante'}</span> <span>✓</span>`;
++                            document.getElementById('responders-list')?.prepend(div);
++                        }
++                    });
++                }
++            }
++
++            // 3. LÓGICA RANKING FINAL
++            if (isFinished) {
++                const { data: ranking } = await client
++                    .from('event_players')
++                    .select('score, players(name)')
++                    .eq('event_id', round.event_id)
++                    .eq('classroom_group_id', round.classroom_group_id)
++                    .order('score', { ascending: false })
++                    .limit(10);
++
++                if (ranking) {
++                    const container = document.getElementById('podium-container');
++                    if (container) {
++                        container.innerHTML = ranking.map((res, idx) => `
++                            <div class="flex items-center justify-between p-6 rounded-[2rem] border-2 shadow-lg bg-white ${idx === 0 ? 'border-yellow-400 scale-105 mb-4' : 'border-zinc-100'}">
++                                <div class="flex items-center gap-6">
++                                    <span class="text-3xl font-black italic">${idx + 1}°</span>
++                                    <span class="text-2xl font-bold uppercase">${res.players.name}</span>
++                                </div>
++                                <span class="text-3xl font-black text-primary">${res.score}</span>
++                            </div>
++                        `).join('');
++                    }
++                }
++            }
+         }
+-    }, 4000);
+
+-    sync();
+-    setInterval(sync, 2500);
++        // Sincronización de estado (Recarga si el docente cambia algo)
++        setInterval(async () => {
++            const client = window.supabaseClient;
++            if (!client) return;
++            const { data } = await client.from('event_rounds').select('current_question_id, status').eq('id', round.id).single();
++            if (data && (data.current_question_id !== round.current_question_id || data.status !== round.status)) {
++                window.location.reload();
++            }
++        }, 4000);
++
++        sync();
++        setInterval(sync, 3000);
++    }
+ </script>
+\ No newline at end of file
+diff --git a/src/pages/play/game/[round_id].astro b/src/pages/play/game/[round_id].astro
+index 9f34aa6..409cc76 100644
+--- a/src/pages/play/game/[round_id].astro
++++ b/src/pages/play/game/[round_id].astro
+@@ -7,16 +7,16 @@ const { round_id } = Astro.params;
+ const user = await Astro.locals.getUser();
+ if (!user) return Astro.redirect("/");
+
+-// 1. Obtener datos de la Ronda y Pregunta actual
++// 1. Obtener datos de la Ronda y Pregunta
+ const { data: round } = await Astro.locals.supabase
+     .from('event_rounds')
+-    .select('*, events(name, program_id), questions(*, game_levels(points, time_limit), answers(*))')
++    .select('*, events(name), questions(*, game_levels(points, time_limit), answers(*))')
+     .eq('id', round_id)
+     .single();
+
+ if (!round || round.status !== 'active') return Astro.redirect(`/play/waiting/${round_id}`);
+
+-// 2. Obtener / Crear Sesión (Plan de rescate incluido)
++// 2. Obtener Perfil e Identificar Sesión
+ const { data: player } = await Astro.locals.supabase
+     .from('players').select('id, name').eq('auth_user_id', user.id).single();
+
+@@ -28,6 +28,7 @@ let { data: gameSession } = await Astro.locals.supabase
+     .eq('finished', false)
+     .maybeSingle();
+
++// Plan de rescate: si no hay sesión, la creamos
+ if (!gameSession && player) {
+     const { data: newS } = await Astro.locals.supabase.from('game_sessions')
+         .insert([{ player_id: player.id, event_id: round.event_id, round_id: round.id, session_type: 'classroom' }])
+@@ -35,7 +36,7 @@ if (!gameSession && player) {
+     gameSession = newS;
+ }
+
+-// 3. Resultado de la acción (Feedback)
++// 3. Procesar resultado de la acción
+ const result = Astro.getActionResult(actions.submitAnswer);
+ const hasResponded = result?.data?.success || false;
+ const isCorrect = result?.data?.correct || false;
+@@ -46,14 +47,14 @@ const isCorrect = result?.data?.correct || false;
+
+     <div class="flex flex-col h-screen p-4 bg-zinc-950 text-white overflow-hidden font-sans">
+
+-        <!-- HEADER: SCORE ACTUAL -->
++        <!-- HEADER -->
+         <header class="flex justify-between items-center bg-zinc-900 border border-zinc-800 p-4 rounded-[2rem] mb-6 shadow-2xl">
+             <div class="flex items-center gap-4">
+                 <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-black text-white italic">
+                     {player?.name?.charAt(0).toUpperCase()}
+                 </div>
+                 <div>
+-                    <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos Totales</p>
++                    <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos</p>
+                     <p class="text-xl font-black text-primary leading-none tabular-nums">{gameSession?.score || 0}</p>
+                 </div>
+             </div>
+@@ -63,30 +64,22 @@ const isCorrect = result?.data?.correct || false;
+         <main class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-8">
+             {hasResponded ? (
+                     <div class="flex flex-col items-center justify-center text-center animate-in zoom-in duration-300">
+-                        <div class:list={[
+-                            "w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-[0_0_50px_rgba(0,0,0,0.5)]",
+-                            isCorrect ? "bg-success animate-bounce" : "bg-error animate-pulse"
+-                        ]}>
++                        <div class:list={["w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-2xl animate-bounce", isCorrect ? "bg-success" : "bg-error"]}>
+                             <Icon name={isCorrect ? "lucide:zap" : "lucide:circle-x"} class="w-16 h-16 text-white" />
+                         </div>
+-
+                         <h2 class="text-5xl font-black uppercase italic mb-2 tracking-tighter drop-shadow-lg">
+                             {isCorrect ? '¡CORRECTO!' : '¡INCORRECTO!'}
+                         </h2>
+-
+                         <div class="flex gap-4 mt-8">
+                             <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
+-                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1 leading-none">Tiempo</p>
++                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Tiempo</p>
+                                 <p class="text-2xl font-bold">{result?.data?.time}s</p>
+                             </div>
+                             <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
+-                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1 leading-none">Puntos</p>
++                                <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Puntos</p>
+                                 <p class="text-2xl font-black text-primary">+{result?.data?.points}</p>
+                             </div>
+                         </div>
+-                        <p class="mt-10 text-zinc-600 font-bold uppercase text-[10px] tracking-[0.3em] animate-pulse">
+-                            Espera la siguiente pregunta...
+-                        </p>
+                     </div>
+             ) : (
+                     <div id="question-area" class="space-y-10">
+@@ -96,7 +89,7 @@ const isCorrect = result?.data?.correct || false;
+                             </h2>
+                         </div>
+
+-                        <form id="answer-form" method="POST" action={actions.submitAnswer} class="grid grid-cols-1 md:grid-cols-2 gap-4">
++                        <form id="game-form" method="POST" action={actions.submitAnswer} class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             <input type="hidden" name="round_id" value={round_id} />
+                             <input type="hidden" name="question_id" value={round?.current_question_id} />
+                             <input type="hidden" name="session_id" value={gameSession?.id} />
+@@ -105,11 +98,11 @@ const isCorrect = result?.data?.correct || false;
+                             {round?.questions?.answers.map((ans: any, idx: number) => (
+                                     <button
+                                             type="button"
+-                                            class="ans-btn group relative h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] text-left overflow-hidden hover:border-primary transition-all active:scale-95 shadow-xl"
++                                            class="option-btn group relative h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] text-left overflow-hidden hover:border-primary transition-all active:scale-95 shadow-xl"
+                                             onclick={`window.submitPlayerAnswer('${ans.id}')`}
+                                     >
+                                         <div class="flex items-center gap-5 px-8 relative z-10">
+-                                    <span class="w-12 h-12 rounded-2xl bg-zinc-800 group-hover:bg-primary flex items-center justify-center font-black text-2xl border border-zinc-700 transition-colors">
++                                    <span class="w-12 h-12 rounded-2xl bg-zinc-800 group-hover:bg-primary flex items-center justify-center font-black text-2xl border border-zinc-700">
+                                         {['A','B','C','D'][idx]}
+                                     </span>
+                                             <span class="font-bold text-lg md:text-xl text-zinc-200">{ans.answer_text}</span>
+@@ -118,13 +111,13 @@ const isCorrect = result?.data?.correct || false;
+                                     </button>
+                             ))}
+                         </form>
++                    </div>
+
+-                        <div id="timeout-area" class="hidden flex-col items-center justify-center text-center animate-in zoom-in">
+-                            <div class="w-32 h-32 bg-amber-500 rounded-full flex items-center justify-center mb-8 shadow-2xl">
+-                                <Icon name="lucide:clock-alert" class="w-16 h-16 text-white" />
+-                            </div>
+-                            <h2 class="text-5xl font-black text-amber-500 italic uppercase">¡TIEMPO AGOTADO!</h2>
++                    <div id="timeout-area" class="hidden flex-col items-center justify-center text-center animate-in zoom-in">
++                        <div class="w-32 h-32 bg-amber-500 rounded-full flex items-center justify-center mb-8 shadow-2xl">
++                            <Icon name="lucide:clock-alert" class="w-16 h-16 text-white" />
+                         </div>
++                        <h2 class="text-5xl font-black text-amber-500 italic uppercase">¡TIEMPO AGOTADO!</h2>
+                     </div>
+             )}
+         </main>
+@@ -134,44 +127,59 @@ const isCorrect = result?.data?.correct || false;
+         </footer>
+     </div>
+
+-    <script is:inline define:vars={{ roundId: round_id, currentQ: round?.current_question_id, startTime: round?.question_started_at, limit: 30 }}>
++    <script is:inline define:vars={{ roundId: round_id, currentQ: round?.current_question_id, startTime: round?.question_started_at, limit: round?.questions?.game_levels?.time_limit || 30 }}>
++        // ESTO DEBE SER LO PRIMERO: Definir la función global
+         let isDone = false;
+
+         window.submitPlayerAnswer = function(id) {
+             if (isDone) return;
+             isDone = true;
++            console.log("Respuesta enviada:", id);
++
+             const input = document.getElementById('answer_id_input');
+             const form = document.getElementById('game-form');
++
+             if (input && form) {
+                 input.value = id;
+-                document.querySelectorAll('.ans-btn').forEach(b => b.disabled = true);
++                // Deshabilitar botones visualmente
++                document.querySelectorAll('.option-btn').forEach(b => {
++                    b.disabled = true;
++                    b.style.opacity = "0.5";
++                });
+                 form.submit();
+             }
+         };
+
++        // 2. SINCRONIZACIÓN
+         async function sync() {
+             if (isDone && !document.querySelector('.animate-bounce')) return;
+             const { data } = await window.supabaseClient.from('event_rounds').select('current_question_id, status').eq('id', roundId).maybeSingle();
+-            if (data && (String(data.current_question_id) !== String(currentQ) || data.status !== 'active')) {
+-                isDone = true;
+-                window.location.href = window.location.pathname;
++
++            if (data) {
++                if (String(data.current_question_id) !== String(currentQ)) {
++                    isDone = true;
++                    window.location.href = window.location.pathname;
++                }
++                if (data.status === 'finished') {
++                    isDone = true;
++                    window.location.href = `/play/results/${roundId}`;
++                }
+             }
+         }
+         setInterval(sync, 2500);
+
++        // 3. TIMER
+         const bar = document.getElementById('timer-bar');
+         const txt = document.getElementById('timer-display');
+         const questionUI = document.getElementById('question-area');
+         const timeoutUI = document.getElementById('timeout-area');
+
+-        if (bar && startTime && !document.querySelector('.animate-bounce') && !document.querySelector('.animate-pulse')) {
++        if (bar && startTime && !document.querySelector('.animate-bounce')) {
+             const start = new Date(startTime).getTime();
+             const total = limit * 1000;
+-
+             function update() {
+                 const now = new Date().getTime();
+                 const rem = Math.max(0, total - (now - start));
+-
+                 if (bar) bar.value = (rem / total) * 100;
+                 if (txt) txt.innerText = Math.ceil(rem / 1000).toString().padStart(2, '0');

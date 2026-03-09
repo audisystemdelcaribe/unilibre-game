@@ -1,0 +1,56 @@
+---
+import "../../styles/global.css";
+import { actions } from "astro:actions";
+import FormButton from "../../components/FormButton.astro";
+
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+const result = Astro.getActionResult(actions.joinRoom);
+
+if (result?.data?.success) {
+    if (result.data.audience_only) {
+        return Astro.redirect(`/play/audience/${result.data.round_id}`);
+    }
+    return Astro.redirect(`/play/waiting/${result.data.round_id}`);
+}
+---
+
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <title>Ayudar a participante | Unilibre Game</title>
+</head>
+<body class="bg-zinc-950 text-white min-h-screen flex flex-col items-center justify-center p-4">
+<div class="w-full max-w-md text-center">
+    <h1 class="text-3xl font-black italic uppercase mb-4">Ayudar a participante</h1>
+    <p class="text-zinc-400 text-sm mb-8">Ingresa el PIN que te dio el docente para votar como público y ayudar al participante.</p>
+
+    <div class="bg-violet-900/30 border border-violet-500/50 p-10 rounded-[2.5rem] shadow-2xl">
+        <p class="text-violet-300 font-bold uppercase text-xs mb-6">PIN DE ACCESO AL PÚBLICO</p>
+
+        <form method="POST" action={actions.joinRoom} class="space-y-8">
+            <input type="hidden" name="as_audience" value="true" />
+            <input
+                name="pin"
+                type="text"
+                inputmode="numeric"
+                placeholder="0000"
+                class="input input-bordered w-full text-center text-5xl font-black tracking-[0.4em] h-28 bg-zinc-800 border-violet-500/50 text-violet-300 outline-none"
+                required
+            />
+
+            <FormButton class="btn-warning btn-lg w-full text-zinc-900 font-black italic uppercase tracking-widest shadow-xl">
+                Entrar a votar
+            </FormButton>
+        </form>
+
+        {result?.error && (
+            <div class="mt-6 p-4 bg-red-500/10 border border-red-500/50 rounded-2xl">
+                <p class="text-red-500 text-xs font-bold uppercase">{result.error.message}</p>
+            </div>
+        )}
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,94 @@
+---
+import PlayLayout from "../../../layouts/PlayLayout.astro";
+import { supabaseAdmin } from "../../../lib/supabaseAdmin";
+
+const { round_id } = Astro.params;
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+const rId = parseInt(String(round_id));
+if (isNaN(rId)) return Astro.redirect("/play?error=ronda_no_encontrada");
+
+const { data: round } = await Astro.locals.supabase
+    .from("event_rounds")
+    .select("id, current_question_id, status, event_id, events(name)")
+    .eq("id", rId)
+    .single();
+
+if (!round || round.status !== "active") return Astro.redirect("/play?error=no_activo");
+
+const { data: player } = await Astro.locals.supabase
+    .from("players")
+    .select("id")
+    .eq("auth_user_id", user.id)
+    .single();
+
+const { data: ac } = await supabaseAdmin
+    .from("active_contestants")
+    .select("player_id")
+    .eq("event_id", round.event_id)
+    .maybeSingle();
+
+const isParticipant = player?.id && ac?.player_id === player.id;
+
+const { data: question } = round.current_question_id
+    ? await Astro.locals.supabase
+          .from("questions")
+          .select("id, question_text")
+          .eq("id", round.current_question_id)
+          .single()
+    : { data: null };
+
+const { data: answers } = question
+    ? await Astro.locals.supabase
+          .from("answers")
+          .select("id, answer_text")
+          .eq("question_id", question.id)
+          .order("id")
+    : { data: [] };
+
+const letters = ["A", "B", "C", "D"];
+const url = Astro.url;
+const voted = url.searchParams.get("voted") === "1";
+const voteError = url.searchParams.get("error");
+---
+
+<PlayLayout title="Votación del público">
+    <div class="min-h-screen flex flex-col items-center justify-center p-6 bg-zinc-950 text-white">
+        <h1 class="text-2xl font-black italic uppercase mb-2">Ayuda del público</h1>
+        <p class="text-zinc-400 text-sm mb-6">{round.events?.name}</p>
+
+        {isParticipant ? (
+            <div class="max-w-md text-center p-8 bg-amber-500/20 border border-amber-500/50 rounded-2xl">
+                <p class="text-amber-300 font-bold mb-2">Eres el participante</p>
+                <p class="text-zinc-400 text-sm">No puedes votar. El público vota por ti. Espera a ver los resultados en tu pantalla.</p>
+            </div>
+        ) : question && answers && answers.length > 0 ? (
+            <div class="w-full max-w-md space-y-6">
+                <p class="text-zinc-300 font-bold text-center">{question.question_text}</p>
+                <div class="space-y-3">
+                    {answers.map((a: { id: number; answer_text: string }, i: number) => (
+                        <form method="POST" action="/api/audience-vote" class="vote-form" data-answer-id={a.id}>
+                            <input type="hidden" name="round_id" value={round_id} />
+                            <input type="hidden" name="question_id" value={question.id} />
+                            <input type="hidden" name="answer_id" value={a.id} />
+                            <button
+                                type="submit"
+                                class="vote-option w-full p-4 rounded-2xl bg-zinc-900 border-2 border-zinc-700 text-left font-bold hover:border-primary transition-all"
+                            >
+                                <span class="w-10 h-10 rounded-xl bg-zinc-800 inline-flex items-center justify-center font-black mr-3">
+                                    {letters[i]}
+                                </span>
+                                {(a.answer_text || "").slice(0, 60)}
+                            </button>
+                        </form>
+                    ))}
+                </div>
+                {voted && <p class="text-center text-green-400 text-sm font-bold">¡Voto registrado!</p>}
+                {voteError && <p class="text-center text-red-400 text-sm">Error: {voteError === "pregunta" ? "Pregunta no activa" : voteError === "jugador" ? "Jugador no encontrado" : voteError}</p>}
+            </div>
+        ) : (
+            <p class="text-zinc-500">No hay pregunta activa. Espera a que el docente lance una.</p>
+        )}
+    </div>
+</PlayLayout>

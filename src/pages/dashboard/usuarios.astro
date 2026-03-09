@@ -1,0 +1,302 @@
+---
+import DashboardLayout from "@/layouts/DashboardLayout.astro";
+import { Icon } from 'astro-icon/components';
+import { actions } from "astro:actions";
+
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+const { data: myProfile } = await Astro.locals.supabase
+    .from('players')
+    .select('role')
+    .eq('auth_user_id', user.id)
+    .single();
+if (myProfile?.role !== 'admin') return Astro.redirect("/dashboard");
+
+// 1. Obtener lista de usuarios con su programa y programas para editar
+const { data: players, error } = await Astro.locals.supabase
+    .from('players')
+    .select('*, programs(name)')
+    .order('name', { ascending: true });
+
+const { data: programs } = await Astro.locals.supabase
+    .from('programs')
+    .select('id, name')
+    .order('name', { ascending: true });
+
+const result = Astro.getActionResult(actions.updateUserRole)
+    || Astro.getActionResult(actions.updatePlayer)
+    || Astro.getActionResult(actions.changePassword)
+    || Astro.getActionResult(actions.deleteUser);
+---
+
+<DashboardLayout title="Gestión de Usuarios" actionResult={result}>
+    <div class="flex justify-between items-end mb-8">
+        <div>
+            <h1 class="text-4xl font-black italic tracking-tighter text-slate-900 uppercase">
+                Usuarios <span class="text-red-600">y Roles</span>
+            </h1>
+            <p class="text-slate-500 font-medium mt-1">Administra los accesos y privilegios del sistema.</p>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="table table-zebra w-full">
+                <thead>
+                    <tr class="bg-slate-50 border-b border-slate-100">
+                        <th class="py-5 px-8 text-slate-400 font-black uppercase text-[10px] tracking-widest">Usuario</th>
+                        <th class="py-5 px-8 text-slate-400 font-black uppercase text-[10px] tracking-widest">Programa / Semestre</th>
+                        <th class="py-5 px-8 text-slate-400 font-black uppercase text-[10px] tracking-widest text-center">Rol Actual</th>
+                        <th class="py-5 px-8 text-slate-400 font-black uppercase text-[10px] tracking-widest text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50">
+                    {players?.map((p) => (
+                        <tr class="hover:bg-slate-50/50 transition-colors group">
+                            <td class="py-4 px-8">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center font-black text-slate-400 uppercase text-sm group-hover:bg-red-100 group-hover:text-red-600 transition-colors">
+                                        {p.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-slate-900 leading-none mb-1">{p.name}</p>
+                                        <p class="text-xs text-slate-400 font-medium">ID: {p.id}</p>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="py-4 px-8">
+                                <p class="text-sm font-bold text-slate-700">{p.programs?.name || 'N/A'}</p>
+                                <p class="text-[10px] font-black uppercase text-slate-400 tracking-tighter italic">Semestre {p.semester || '?'}</p>
+                            </td>
+                            <td class="py-4 px-8 text-center">
+                                <span class:list={[
+                                    "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                                    p.role === 'admin' ? "bg-red-50 text-red-600 border-red-100" : 
+                                    p.role === 'docente' ? "bg-blue-50 text-blue-600 border-blue-100" : 
+                                    "bg-emerald-50 text-emerald-600 border-emerald-100"
+                                ]}>
+                                    {p.role}
+                                </span>
+                            </td>
+                            <td class="py-4 px-8 text-right">
+                                <div class="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button 
+                                        class="btn btn-square btn-ghost btn-sm text-slate-400 hover:text-amber-600 hover:bg-amber-50"
+                                        data-action="edit"
+                                        data-id={p.id}
+                                        data-name={p.name}
+                                        data-program-id={p.program_id ?? ''}
+                                        data-semester={p.semester ?? ''}
+                                        title="Editar Usuario"
+                                    >
+                                        <Icon name="lucide:pencil" class="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                        class="btn btn-square btn-ghost btn-sm text-slate-400 hover:text-violet-600 hover:bg-violet-50"
+                                        data-action="password"
+                                        data-id={p.id}
+                                        data-name={p.name}
+                                        title="Cambiar Contraseña"
+                                    >
+                                        <Icon name="lucide:key-round" class="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                        class="btn btn-square btn-ghost btn-sm text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                                        data-action="role"
+                                        data-id={p.id}
+                                        data-name={p.name}
+                                        data-role={p.role}
+                                        title="Cambiar Rol"
+                                    >
+                                        <Icon name="lucide:shield-check" class="w-4 h-4" />
+                                    </button>
+                                    <button 
+                                        class="btn btn-square btn-ghost btn-sm text-slate-400 hover:text-red-600 hover:bg-red-50"
+                                        data-action="delete"
+                                        data-id={p.id}
+                                        data-name={p.name}
+                                        title="Eliminar Usuario"
+                                    >
+                                        <Icon name="lucide:trash-2" class="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- MODAL CAMBIAR ROL -->
+    <dialog id="role_modal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box bg-white rounded-[2.5rem] p-10 border-none shadow-2xl">
+            <h3 class="text-3xl font-black italic uppercase tracking-tighter text-slate-900 mb-2">
+                Cambiar <span class="text-blue-600">Privilegios</span>
+            </h3>
+            <p class="text-slate-500 text-sm font-medium mb-8">
+                Estás modificando el acceso para: <span id="modal_user_name" class="font-black text-slate-900"></span>
+            </p>
+
+            <form method="POST" action={actions.updateUserRole} class="space-y-6">
+                <input type="hidden" name="player_id" id="modal_player_id" />
+                
+                <div class="grid grid-cols-1 gap-3">
+                    <label class="flex items-center gap-4 p-5 rounded-3xl border-2 border-slate-100 hover:border-blue-100 cursor-pointer transition-all has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/30 group">
+                        <input type="radio" name="role" value="player" class="radio radio-primary" />
+                        <div>
+                            <p class="font-black uppercase text-xs text-slate-900">Estudiante (Player)</p>
+                            <p class="text-[10px] text-slate-500 font-medium italic">Acceso estándar al juego y perfil.</p>
+                        </div>
+                    </label>
+
+                    <label class="flex items-center gap-4 p-5 rounded-3xl border-2 border-slate-100 hover:border-blue-100 cursor-pointer transition-all has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/30 group">
+                        <input type="radio" name="role" value="docente" class="radio radio-primary" />
+                        <div>
+                            <p class="font-black uppercase text-xs text-slate-900">Docente / Staff</p>
+                            <p class="text-[10px] text-slate-500 font-medium italic">Gestión de bancos de preguntas y eventos.</p>
+                        </div>
+                    </label>
+
+                    <label class="flex items-center gap-4 p-5 rounded-3xl border-2 border-slate-100 hover:border-blue-100 cursor-pointer transition-all has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/30 group">
+                        <input type="radio" name="role" value="admin" class="radio radio-primary" />
+                        <div>
+                            <p class="font-black uppercase text-xs text-slate-900">Administrador</p>
+                            <p class="text-[10px] text-slate-500 font-medium italic">Control total sobre configuración y seguridad.</p>
+                        </div>
+                    </label>
+                </div>
+
+                <div class="modal-action flex gap-3 mt-10">
+                    <button type="button" class="btn btn-ghost flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest" onclick="role_modal.close()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest text-white shadow-lg shadow-blue-200">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- MODAL EDITAR USUARIO -->
+    <dialog id="edit_modal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box bg-white rounded-[2.5rem] p-10 border-none shadow-2xl">
+            <h3 class="text-3xl font-black italic uppercase tracking-tighter text-slate-900 mb-2">
+                Editar <span class="text-amber-600">Usuario</span>
+            </h3>
+            <p class="text-slate-500 text-sm font-medium mb-8">
+                Modificando: <span id="edit_modal_user_name" class="font-black text-slate-900"></span>
+            </p>
+
+            <form method="POST" action={actions.updatePlayer} class="space-y-6">
+                <input type="hidden" name="player_id" id="edit_player_id" />
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-slate-700 uppercase text-[10px]">Nombre Completo</span></label>
+                    <input name="name" id="edit_name" type="text" required minlength="3" class="input input-bordered w-full rounded-2xl font-bold" placeholder="Ej: Pedro Pérez" />
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-slate-700 uppercase text-[10px]">Programa</span></label>
+                    <select name="program_id" id="edit_program_id" required class="select select-bordered w-full rounded-2xl font-bold">
+                        <option value="">Selecciona...</option>
+                        {programs?.map(p => <option value={p.id}>{p.name}</option>)}
+                    </select>
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-slate-700 uppercase text-[10px]">Semestre (1-12)</span></label>
+                    <input name="semester" id="edit_semester" type="number" min="1" max="12" required class="input input-bordered w-full rounded-2xl font-bold" placeholder="1" />
+                </div>
+
+                <div class="modal-action flex gap-3 mt-10">
+                    <button type="button" class="btn btn-ghost flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest" onclick="edit_modal.close()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest text-white shadow-lg shadow-amber-200 border-none">Guardar Cambios</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- MODAL CAMBIAR CONTRASEÑA -->
+    <dialog id="password_modal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box bg-white rounded-[2.5rem] p-10 border-none shadow-2xl">
+            <div class="w-16 h-16 bg-violet-50 text-violet-600 rounded-2xl flex items-center justify-center mb-6">
+                <Icon name="lucide:key-round" class="w-8 h-8" />
+            </div>
+            <h3 class="text-3xl font-black italic uppercase tracking-tighter text-slate-900 mb-2">
+                Nueva <span class="text-violet-600">Contraseña</span>
+            </h3>
+            <p class="text-slate-500 text-sm font-medium mb-8">
+                Estableciendo nueva contraseña para: <span id="password_modal_user_name" class="font-black text-slate-900"></span>
+            </p>
+
+            <form method="POST" action={actions.changePassword} class="space-y-6">
+                <input type="hidden" name="player_id" id="password_player_id" />
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-black text-slate-700 uppercase text-[10px]">Nueva contraseña (mín. 6 caracteres)</span></label>
+                    <input name="new_password" type="password" required minlength="6" class="input input-bordered w-full rounded-2xl font-bold" placeholder="••••••••" autocomplete="new-password" />
+                </div>
+
+                <div class="modal-action flex gap-3 mt-10">
+                    <button type="button" class="btn btn-ghost flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest" onclick="password_modal.close()">Cancelar</button>
+                    <button type="submit" class="btn bg-violet-600 hover:bg-violet-700 text-white flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest border-none">Cambiar Contraseña</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+    <!-- MODAL ELIMINAR -->
+    <dialog id="delete_modal" class="modal modal-bottom sm:modal-middle">
+        <div class="modal-box bg-white rounded-[2.5rem] p-10 border-none shadow-2xl">
+            <div class="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mb-6">
+                <Icon name="lucide:alert-triangle" class="w-8 h-8" />
+            </div>
+            
+            <h3 class="text-3xl font-black italic uppercase tracking-tighter text-slate-900 mb-2">
+                ¿Eliminar <span class="text-red-600">Usuario?</span>
+            </h3>
+            <p class="text-slate-500 text-sm font-medium mb-2">
+                Esta acción es irreversible. Se borrará el perfil de <span id="delete_user_name" class="font-black text-slate-900"></span> y su cuenta de acceso.
+            </p>
+            <p class="text-[10px] text-red-500 font-bold uppercase tracking-widest mb-10 italic underline decoration-2">¡Peligro: El usuario perderá todo su progreso!</p>
+
+            <form method="POST" action={actions.deleteUser}>
+                <input type="hidden" name="player_id" id="delete_player_id" />
+                <div class="modal-action flex gap-3">
+                    <button type="button" class="btn btn-ghost flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest" onclick="delete_modal.close()">No, mantener</button>
+                    <button type="submit" class="btn bg-red-600 hover:bg-red-700 text-white flex-1 rounded-2xl font-black uppercase italic text-xs tracking-widest shadow-lg shadow-red-200 border-none">Sí, eliminar</button>
+                </div>
+            </form>
+        </div>
+    </dialog>
+
+</DashboardLayout>
+
+<script is:inline>
+    document.querySelectorAll('[data-action]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.dataset.id;
+            const name = btn.dataset.name || '';
+            const action = btn.dataset.action;
+
+            if (action === 'edit') {
+                document.getElementById('edit_player_id').value = id;
+                document.getElementById('edit_modal_user_name').textContent = name;
+                document.getElementById('edit_name').value = name;
+                document.getElementById('edit_program_id').value = btn.dataset.programId || '';
+                document.getElementById('edit_semester').value = btn.dataset.semester || '1';
+                edit_modal.showModal();
+            } else if (action === 'password') {
+                document.getElementById('password_player_id').value = id;
+                document.getElementById('password_modal_user_name').textContent = name;
+                document.querySelector('#password_modal form input[name="new_password"]').value = '';
+                password_modal.showModal();
+            } else if (action === 'role') {
+                document.getElementById('modal_player_id').value = id;
+                document.getElementById('modal_user_name').textContent = name;
+                const radios = document.getElementsByName('role');
+                radios.forEach(r => { r.checked = (r.value === btn.dataset.role); });
+                role_modal.showModal();
+            } else if (action === 'delete') {
+                document.getElementById('delete_player_id').value = id;
+                document.getElementById('delete_user_name').textContent = name;
+                delete_modal.showModal();
+            }
+        });
+    });
+</script>
