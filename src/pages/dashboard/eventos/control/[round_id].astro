@@ -189,6 +189,48 @@ if (confirmResult?.data?.clasico_round_id) {
                             {clasicoResult.score > 0 ? 'Ganó dinero' : 'No alcanzó un seguro'}
                         </p>
                     </div>
+                    <script is:inline define:vars={{ score: clasicoResult.score, levelOrder: clasicoResult.levelOrder }}>
+                        const wonMoney = score > 0;
+                        const isFullWinner = wonMoney && levelOrder >= 15;
+                        if (wonMoney) {
+                            if (isFullWinner) {
+                                const duration = 4000;
+                                const end = Date.now() + duration;
+                                (function frame() {
+                                    confetti({
+                                        particleCount: 4,
+                                        angle: 60,
+                                        spread: 55,
+                                        origin: { x: 0 },
+                                        colors: ['#fbbf24', '#f59e0b', '#f97316', '#ea580c', '#fcd34d']
+                                    });
+                                    confetti({
+                                        particleCount: 4,
+                                        angle: 120,
+                                        spread: 55,
+                                        origin: { x: 1 },
+                                        colors: ['#fbbf24', '#f59e0b', '#f97316', '#ea580c', '#fcd34d']
+                                    });
+                                    if (Date.now() < end) requestAnimationFrame(frame);
+                                }());
+                                setTimeout(function() {
+                                    confetti({
+                                        particleCount: 100,
+                                        spread: 100,
+                                        origin: { y: 0.5 },
+                                        colors: ['#fbbf24', '#f59e0b', '#f97316', '#ea580c', '#fcd34d', '#ffffff']
+                                    });
+                                }, 500);
+                            } else {
+                                confetti({
+                                    particleCount: 120,
+                                    spread: 70,
+                                    origin: { y: 0.6 },
+                                    colors: ['#fbbf24', '#f59e0b', '#f97316']
+                                });
+                            }
+                        }
+                    </script>
                 </div>
             ) : (
                 <div class="text-center py-10">
