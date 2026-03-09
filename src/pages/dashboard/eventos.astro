@@ -13,13 +13,24 @@ if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redir
 // Capturamos el resultado para el Toast global
 const result = Astro.getActionResult(actions.saveEvent) || Astro.getActionResult(actions.deleteEvent);
 
-// 1. Cargar Eventos con sus relaciones
-const { data: events } = await Astro.locals.supabase
-    .from('events')
-    .select('*, seasons(name), game_modes(name), faculties(name), programs(name)')
-    .order('event_date', { ascending: false });
+// 1. Paginación
+const PAGE_SIZE = 12;
+const page = Math.max(1, parseInt(Astro.url.searchParams.get('page') || '1') || 1);
+const from = (page - 1) * PAGE_SIZE;
+const to = from + PAGE_SIZE - 1;
 
-// 2. Datos para los selectores del Modal
+// 2. Cargar Eventos con paginación
+const { data: events, count: totalCount } = await Astro.locals.supabase
+    .from('events')
+    .select('*, seasons(name), game_modes(name), faculties(name), programs(name)', { count: 'exact' })
+    .order('event_date', { ascending: false })
+    .range(from, to);
+
+const totalPages = Math.max(1, Math.ceil((totalCount ?? 0) / PAGE_SIZE));
+const hasPrev = page > 1;
+const hasNext = page < totalPages;
+
+// 4. Datos para los selectores del Modal
 const { data: seasons } = await Astro.locals.supabase.from('seasons').select('id, name').eq('status', 'active');
 const { data: modes } = await Astro.locals.supabase.from('game_modes').select('id, name');
 const { data: faculties } = await Astro.locals.supabase.from('faculties').select('id, name').order('name');
@@ -35,57 +46,88 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
         <button id="btn-nuevo" class="btn btn-primary text-white font-bold px-8 shadow-lg">+ Crear Nueva Sala</button>
     </div>
 
-    <!-- REJILLA DE EVENTOS -->
-    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {events?.map((e) => (
-                <div class="card bg-white border border-base-300 shadow-sm overflow-hidden hover:border-primary/50 transition-all group">
-                    <div class="p-6">
-                        <div class="flex justify-between items-start mb-4">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <span class="badge badge-secondary badge-sm font-black text-[9px] uppercase tracking-tighter">{e.game_modes?.name}</span>
-                                    <span class="badge badge-ghost badge-sm font-bold text-[9px] uppercase">{e.scope}</span>
-                                </div>
-                                <h3 class="text-2xl font-black text-slate-800 uppercase italic leading-tight">{e.name}</h3>
+    <!-- TABLA DE EVENTOS -->
+    <div class="overflow-x-auto bg-white border border-base-300 rounded-2xl shadow-sm">
+        <table class="table">
+            <thead>
+                <tr class="bg-base-200/80">
+                    <th class="font-black text-[10px] uppercase text-slate-500">Sala</th>
+                    <th class="font-black text-[10px] uppercase text-slate-500">Modo</th>
+                    <th class="font-black text-[10px] uppercase text-slate-500">Fecha</th>
+                    <th class="font-black text-[10px] uppercase text-slate-500">Temporada</th>
+                    <th class="font-black text-[10px] uppercase text-slate-500 text-right">Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {events?.map((e) => (
+                    <tr class="hover:bg-base-100/50 border-b border-base-200 last:border-0">
+                        <td>
+                            <div>
+                                <p class="font-black text-slate-800 uppercase italic">{e.name}</p>
+                                <p class="text-xs text-slate-500 line-clamp-1">{e.description || '—'}</p>
                             </div>
-                            <!-- ELIMINAMOS EL DIV DEL PIN DE AQUÍ -->
-                        </div>
-
-                        <p class="text-xs text-slate-500 mb-6 line-clamp-2 italic min-h-[32px]">
-                            {e.description || 'Sin descripción adicional.'}
-                        </p>
-
-                        <div class="grid grid-cols-2 gap-4 text-[11px] font-black text-slate-500 mb-6 bg-base-200/50 p-4 rounded-2xl border border-base-300">
-                            <div class="flex items-center gap-2">
-                                <Icon name="lucide:calendar-days" class="w-4 h-4 text-primary" />
-                                {new Date(e.event_date).toLocaleDateString('es-CO', { dateStyle: 'long' })}
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <Icon name="lucide:layers" class="w-4 h-4 text-primary" />
-                                {e.seasons?.name || 'Temporada Desconocida'}
-                            </div>
-                        </div>
-
-                        <div class="flex justify-between items-center pt-4 border-t border-dashed border-base-300">
-                            <div class="flex gap-1">
+                        </td>
+                        <td>
+                            <span class="badge badge-secondary badge-sm font-bold text-[9px] uppercase">{e.game_modes?.name}</span>
+                            <span class="badge badge-ghost badge-sm text-[9px] ml-1">{e.scope}</span>
+                        </td>
+                        <td class="text-sm font-medium text-slate-600">
+                            {new Date(e.event_date).toLocaleDateString('es-CO', { dateStyle: 'medium' })}
+                        </td>
+                        <td class="text-sm font-medium text-slate-600">{e.seasons?.name || '—'}</td>
+                        <td class="text-right">
+                            <div class="flex items-center justify-end gap-1">
                                 <button class="btn btn-sm btn-circle btn-ghost text-primary btn-edit"
                                         data-id={e.id} data-name={e.name} data-desc={e.description || ''}
                                         data-date={e.event_date} data-season={e.season_id} data-mode={e.game_mode_id}
-                                        data-scope={e.scope} data-fac={e.faculty_id} data-prog={e.program_id} data-code={e.access_code}>
+                                        data-scope={e.scope} data-fac={e.faculty_id} data-prog={e.program_id} data-code={e.access_code}
+                                        title="Editar">
                                     <Icon name="lucide:pencil" size={16} />
                                 </button>
-                                <button class="btn btn-sm btn-circle btn-ghost text-error btn-delete" data-id={e.id} data-name={e.name}>
+                                <button class="btn btn-sm btn-circle btn-ghost text-error btn-delete" data-id={e.id} data-name={e.name} title="Eliminar">
                                     <Icon name="lucide:trash-2" size={16} />
                                 </button>
+                                <a href={`/dashboard/eventos/${e.id}/lanzar`} class="btn btn-primary btn-sm text-white font-bold uppercase text-[10px] px-4">
+                                    Lanzar
+                                </a>
                             </div>
-                            <a href={`/dashboard/eventos/${e.id}/lanzar`} class="btn btn-primary text-white font-black italic uppercase text-xs px-6 shadow-md">
-                                Lanzar Panel de Control
-                            </a>
+                        </td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    </div>
 
-                        </div>
-                    </div>
-                </div>
-        ))}
+    <!-- PAGINACIÓN -->
+    <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-10 pt-6 border-t border-base-300">
+        <p class="text-sm text-slate-500 font-medium">
+            {(totalCount ?? 0) === 0
+                ? 'No hay eventos'
+                : `Mostrando ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount ?? 0)} de ${totalCount ?? 0} eventos`}
+        </p>
+        {totalPages > 1 && (
+            <div class="join">
+                <a href={hasPrev ? `/dashboard/eventos?page=${page - 1}` : '#'} class={`join-item btn btn-sm ${!hasPrev ? 'btn-disabled pointer-events-none' : ''}`} aria-label="Anterior">
+                    ‹
+                </a>
+                {(() => {
+                    const pages: number[] = [];
+                    const show = Math.min(5, totalPages);
+                    if (totalPages <= 5) for (let i = 1; i <= totalPages; i++) pages.push(i);
+                    else if (page <= 3) for (let i = 1; i <= show; i++) pages.push(i);
+                    else if (page >= totalPages - 2) for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+                    else for (let i = page - 2; i <= page + 2; i++) pages.push(i);
+                    return pages.map((p) => (
+                        <a href={`/dashboard/eventos?page=${p}`} class={`join-item btn btn-sm ${p === page ? 'btn-primary' : ''}`}>
+                            {p}
+                        </a>
+                    ));
+                })()}
+                <a href={hasNext ? `/dashboard/eventos?page=${page + 1}` : '#'} class={`join-item btn btn-sm ${!hasNext ? 'btn-disabled pointer-events-none' : ''}`} aria-label="Siguiente">
+                    ›
+                </a>
+            </div>
+        )}
     </div>
 
     <!-- MODAL DE CONFIGURACIÓN -->
