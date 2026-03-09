@@ -2,6 +2,7 @@
 import PlayLayout from "../../../layouts/PlayLayout.astro";
 import { actions } from "astro:actions";
 import { Icon } from 'astro-icon/components';
+import { supabaseAdmin } from "../../../lib/supabaseAdmin";
 
 const { round_id } = Astro.params;
 const user = await Astro.locals.getUser();
@@ -44,13 +45,20 @@ let { data: gameSession } = await Astro.locals.supabase
     .eq('finished', false)
     .maybeSingle();
 
-// Plan de rescate: solo si ya está en event_players (se unió con PIN) pero perdió la sesión
+// Plan de rescate: si no hay sesión, usar upsert (evita duplicate key si ya existe por joinRoom)
 if (!gameSession && player) {
-    const { data: newS, error: sessErr } = await Astro.locals.supabase.from('game_sessions')
-        .insert([{ player_id: player.id, event_id: round.event_id, round_id: round.id, session_type: 'classroom' }])
-        .select().single();
-    if (sessErr) console.error('Error creando sesión:', sessErr);
-    gameSession = newS;
+    const { data: newS, error: sessErr } = await supabaseAdmin
+        .from('game_sessions')
+        .upsert({
+            player_id: player.id,
+            event_id: round.event_id,
+            round_id: round.id,
+            session_type: 'classroom',
+            finished: false,
+        }, { onConflict: 'player_id, event_id, finished' })
+        .select()
+        .single();
+    if (!sessErr) gameSession = newS;
 }
 
 // Comodines: solo para juego final (Clásico)
@@ -320,14 +328,15 @@ const debugResult = result ? {
         window.isJuegoFinal = isJuegoFinal;
         let isDone = false;
 
-        // SINCRONIZACIÓN - Siempre verificar nueva pregunta (incluso en "tiempo agotado")
+        // SINCRONIZACIÓN - Verificar nueva pregunta o fin de ronda (evitar reload por null transitorio)
         async function sync() {
             const client = window.supabaseClient;
             if (!client) return;
             const { data } = await client.from('event_rounds').select('current_question_id, status').eq('id', roundId).maybeSingle();
 
             if (data) {
-                if (String(data.current_question_id) !== String(currentQ)) {
+                const newQ = data.current_question_id;
+                if (newQ != null && String(newQ) !== String(currentQ)) {
                     isDone = true;
                     window.location.href = window.location.pathname;
                     return;
@@ -338,7 +347,7 @@ const debugResult = result ? {
                 }
             }
         }
-        setInterval(sync, 2000);
+        setInterval(sync, 3000);
 
         // TIMER - Solo en preselección; en juego final no hay tiempo, va al ritmo del docente
         const bar = document.getElementById('timer-bar');
