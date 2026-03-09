@@ -265,7 +265,7 @@ if (confirmResult?.data?.clasico_round_id) {
                                             </div>
                                         </div>
                                         {isClasico && (
-                                            <div class="mt-4 p-4 bg-violet-500/20 border border-violet-500/50 rounded-2xl">
+                                            <div id="audience-pin-box" class:list={["mt-4 p-4 bg-violet-500/20 border border-violet-500/50 rounded-2xl", !showAudienceVotes && "hidden"]}>
                                                 <p class="text-[10px] text-violet-400 uppercase font-black mb-1">PIN para unirse como público</p>
                                                 <p class="text-2xl font-mono font-black text-violet-300 tracking-widest">{round?.session_pin || '—'}</p>
                                                 <p class="text-[10px] text-zinc-500 mt-1">Ir a <strong>Ayudar a participante</strong> en el menú o a /play/ayudar e ingresar este PIN.</p>
@@ -567,7 +567,12 @@ if (confirmResult?.data?.clasico_round_id) {
                 if (data.error) { alert(data.error); btn.disabled = false; }
                 else if (code === 'publico') {
                     var box = document.getElementById('audience-votes-box');
+                    var pinBox = document.getElementById('audience-pin-box');
                     if (box) { box.classList.remove('hidden'); fetchAudienceVotes(); }
+                    if (pinBox) pinBox.classList.remove('hidden');
+                    if (box && !window.audienceVotesInterval) {
+                        window.audienceVotesInterval = setInterval(fetchAudienceVotes, 3000);
+                    }
                 }
             }).catch(function() { btn.disabled = false; });
         });
