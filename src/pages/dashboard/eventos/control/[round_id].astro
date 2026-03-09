@@ -132,12 +132,15 @@ const isFinished = round?.status === 'finished';
 
 // Comodines ya usados en la sesión (por ronda completa, no por pregunta)
 let usedLifelines: string[] = [];
+let showAudienceVotes = false; // Solo mostrar votación si el comodín fue usado para la pregunta actual
 if (isClasico && (isActive || isWaiting)) {
     const { data: usage } = await supabaseAdmin
         .from('round_lifeline_usage')
-        .select('lifeline_code')
+        .select('lifeline_code, question_id')
         .eq('round_id', parseInt(round_id));
     usedLifelines = [...new Set((usage || []).map((u) => u.lifeline_code))];
+    // La votación del público solo se muestra mientras estamos en la pregunta para la que se activó
+    showAudienceVotes = !!(usage || []).find((u) => u.lifeline_code === 'publico' && u.question_id === round?.current_question_id);
 }
 
 const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound) || Astro.getActionResult(actions.launchFastestFinger) || Astro.getActionResult(actions.confirmWinner) || Astro.getActionResult(actions.useLifeline5050) || Astro.getActionResult(actions.useLifelineCambiarPregunta) || Astro.getActionResult(actions.useLifelineLlamada) || Astro.getActionResult(actions.useLifelinePublico) || Astro.getActionResult(actions.verifyClasicoAnswer);
@@ -269,7 +272,7 @@ if (confirmResult?.data?.clasico_round_id) {
                                             </div>
                                         )}
                                         {isClasico && (
-                                            <div id="audience-votes-box" class:list={["mt-4 p-4 bg-violet-500/20 border border-violet-500/50 rounded-2xl", !usedLifelines.includes('publico') && "hidden"]}>
+                                            <div id="audience-votes-box" class:list={["mt-4 p-4 bg-violet-500/20 border border-violet-500/50 rounded-2xl", !showAudienceVotes && "hidden"]}>
                                                 <p class="text-[10px] text-violet-400 uppercase font-black mb-2">Votación del público</p>
                                                 <div id="audience-chart" class="space-y-2 min-h-[120px]"></div>
                                             </div>
@@ -572,7 +575,7 @@ if (confirmResult?.data?.clasico_round_id) {
 
     sync();
     setInterval(sync, 2000);
-    if (document.getElementById('audience-votes-box')) {
+    if (document.getElementById('audience-votes-box') && !document.getElementById('audience-votes-box').classList.contains('hidden')) {
         fetchAudienceVotes();
         setInterval(fetchAudienceVotes, 3000);
     }
