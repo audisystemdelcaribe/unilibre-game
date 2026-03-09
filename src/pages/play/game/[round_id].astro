@@ -114,43 +114,19 @@ const debugResult = result ? {
                     {player?.name?.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                    {isJuegoFinal && player?.name && (
-                        <p class="text-sm font-bold text-white leading-none mb-1">{player.name}</p>
+                    {isJuegoFinal && player?.name ? (
+                        <p class="text-xl md:text-2xl font-black text-white leading-tight">{player.name}</p>
+                    ) : (
+                        <>
+                            <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos</p>
+                            <p class="text-xl font-black text-primary leading-none tabular-nums">{gameSession?.score || 0}</p>
+                        </>
                     )}
-                    <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos</p>
-                    <p class="text-xl font-black text-primary leading-none tabular-nums">{gameSession?.score || 0}</p>
                 </div>
             </div>
-            <div class="flex items-center gap-4">
-                {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
-                    <div id="lifelines-bar" class="flex gap-3 flex-wrap">
-                        {lifelines.map((l) => {
-                            const code = (l.code || '').toLowerCase();
-                            const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
-                            const isCambiar = code === 'cambiar' || code === 'saltar' || (l.name || '').toLowerCase().includes('cambiar');
-                            const isPublico = code === 'publico' || (l.name || '').toLowerCase().includes('público') || (l.name || '').toLowerCase().includes('publico');
-                            const isLlamada = code === 'llamada' || (l.name || '').toLowerCase().includes('llamada');
-                            const lifelineCode = is5050 ? '5050' : isCambiar ? 'cambiar' : isPublico ? 'publico' : isLlamada ? 'llamada' : code;
-                            const isUsed = usedLifelinesInRound.includes(lifelineCode);
-                            return (
-                                <span
-                                    class:list={[
-                                        'lifeline-badge px-5 py-2.5 rounded-2xl text-base font-black border-2',
-                                        isUsed ? 'bg-zinc-800/50 border-zinc-600 text-zinc-500 opacity-60 line-through' : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                                    ]}
-                                    data-code={l.code || ''}
-                                    data-name={l.name}
-                                >
-                                    {l.name}{isUsed ? ' (usado)' : ''}
-                                </span>
-                            );
-                        })}
-                    </div>
-                )}
-                {!isJuegoFinal && (
-                    <div id="timer-display" class="text-4xl font-black italic text-white tabular-nums">00</div>
-                )}
-            </div>
+            {!isJuegoFinal && (
+                <div id="timer-display" class="text-4xl font-black italic text-white tabular-nums">00</div>
+            )}
         </header>
 
         <main class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-8">
@@ -167,10 +143,12 @@ const debugResult = result ? {
                                 <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Tiempo</p>
                                 <p class="text-2xl font-bold">{result?.data?.time}s</p>
                             </div>
+                            {!isJuegoFinal && (
                             <div class="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 min-w-[120px]">
                                 <p class="text-[10px] font-black text-zinc-500 uppercase mb-1">Puntos</p>
                                 <p class="text-2xl font-black text-primary">+{result?.data?.points}</p>
                             </div>
+                            )}
                         </div>
                     </div>
             ) : !gameSession ? (
@@ -224,6 +202,34 @@ const debugResult = result ? {
             )}
         </main>
 
+        {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
+            <footer class="mt-6 pb-8 pt-4 border-t border-zinc-800">
+                <p class="text-[10px] text-zinc-500 uppercase font-black mb-3 text-center">Comodines</p>
+                <div id="lifelines-bar" class="flex gap-3 flex-wrap justify-center">
+                    {lifelines.map((l) => {
+                        const code = (l.code || '').toLowerCase();
+                        const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
+                        const isCambiar = code === 'cambiar' || code === 'saltar' || (l.name || '').toLowerCase().includes('cambiar');
+                        const isPublico = code === 'publico' || (l.name || '').toLowerCase().includes('público') || (l.name || '').toLowerCase().includes('publico');
+                        const isLlamada = code === 'llamada' || (l.name || '').toLowerCase().includes('llamada');
+                        const lifelineCode = is5050 ? '5050' : isCambiar ? 'cambiar' : isPublico ? 'publico' : isLlamada ? 'llamada' : code;
+                        const isUsed = usedLifelinesInRound.includes(lifelineCode);
+                        return (
+                            <span
+                                class:list={[
+                                    'lifeline-badge px-5 py-2.5 rounded-2xl text-base font-black border-2',
+                                    isUsed ? 'bg-zinc-800/50 border-zinc-600 text-zinc-500 opacity-60 line-through' : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
+                                ]}
+                                data-code={l.code || ''}
+                                data-name={l.name}
+                            >
+                                {l.name}{isUsed ? ' (usado)' : ''}
+                            </span>
+                        );
+                    })}
+                </div>
+            </footer>
+        )}
         {!isJuegoFinal && (
             <footer class="mt-8 pb-10">
                 <progress id="timer-bar" class="progress progress-primary w-full h-4 bg-zinc-800 shadow-inner" value="100" max="100"></progress>
