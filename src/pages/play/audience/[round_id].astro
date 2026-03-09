@@ -51,6 +51,17 @@ const letters = ["A", "B", "C", "D"];
 const url = Astro.url;
 const voted = url.searchParams.get("voted") === "1";
 const voteError = url.searchParams.get("error");
+
+// Mostrar votación solo si el comodín fue activado para la pregunta actual (no para otra pregunta).
+// Cuando el docente avanza a otra pregunta, se quitamos la votación.
+const { data: publicoUsage } = await supabaseAdmin
+    .from("round_lifeline_usage")
+    .select("question_id")
+    .eq("round_id", rId)
+    .eq("lifeline_code", "publico")
+    .eq("question_id", round.current_question_id)
+    .maybeSingle();
+const showVoting = !!publicoUsage && !!question && !!answers?.length;
 ---
 
 <PlayLayout title="Votación del público">
@@ -63,7 +74,7 @@ const voteError = url.searchParams.get("error");
                 <p class="text-amber-300 font-bold mb-2">Eres el participante</p>
                 <p class="text-zinc-400 text-sm">No puedes votar. El público vota por ti. Espera a ver los resultados en tu pantalla.</p>
             </div>
-        ) : question && answers && answers.length > 0 ? (
+        ) : showVoting ? (
             <div class="w-full max-w-md space-y-6">
                 <p class="text-zinc-300 font-bold text-center">{question.question_text}</p>
                 <div class="space-y-3">
@@ -86,6 +97,11 @@ const voteError = url.searchParams.get("error");
                 </div>
                 {voted && <p class="text-center text-green-400 text-sm font-bold">¡Voto registrado!</p>}
                 {voteError && <p class="text-center text-red-400 text-sm">Error: {voteError === "pregunta" ? "Pregunta no activa" : voteError === "jugador" ? "Jugador no encontrado" : voteError}</p>}
+            </div>
+        ) : question && answers && answers.length > 0 ? (
+            <div class="max-w-md text-center p-8 bg-zinc-800/50 border border-zinc-700 rounded-2xl">
+                <p class="text-zinc-400 font-bold">La votación ya terminó para esta pregunta.</p>
+                <p class="text-zinc-500 text-sm mt-2">Espera a que el docente lance la siguiente.</p>
             </div>
         ) : (
             <p class="text-zinc-500">No hay pregunta activa. Espera a que el docente lance una.</p>

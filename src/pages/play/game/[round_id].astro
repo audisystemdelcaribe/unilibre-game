@@ -127,7 +127,7 @@ const debugResult = result ? {
             </div>
             <div class="flex items-center gap-4">
                 {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
-                    <div id="lifelines-bar" class="flex gap-2 flex-wrap">
+                    <div id="lifelines-bar" class="flex gap-3 flex-wrap">
                         {lifelines.map((l) => {
                             const code = (l.code || '').toLowerCase();
                             const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
@@ -139,7 +139,7 @@ const debugResult = result ? {
                             return (
                                 <span
                                     class:list={[
-                                        'lifeline-badge px-3 py-1 rounded-xl text-xs font-bold border',
+                                        'lifeline-badge px-5 py-2.5 rounded-2xl text-base font-black border-2',
                                         isUsed ? 'bg-zinc-800/50 border-zinc-600 text-zinc-500 opacity-60 line-through' : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
                                     ]}
                                     data-code={l.code || ''}
