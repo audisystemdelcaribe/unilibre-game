@@ -452,7 +452,7 @@ export const liveSessionsActions = {
             if (!answer) throw new Error("Respuesta no encontrada");
 
             const correct = answer.is_correct === true;
-            const { data: roundFull } = await supabaseAdmin.from('event_rounds').select('*, events(program_id)').eq('id', rId).single();
+            const { data: roundFull } = await supabaseAdmin.from('event_rounds').select('*, events(program_id, season_id)').eq('id', rId).single();
             if (!roundFull) throw new Error("Ronda no encontrada");
 
             const { data: question } = await supabaseAdmin.from('questions').select('level_id').eq('id', round.current_question_id).single();
@@ -475,9 +475,14 @@ export const liveSessionsActions = {
                 if (!nextLevelId) {
                     const winPrize = level?.money_value ?? level?.points ?? 0;
                     await supabaseAdmin.from('game_sessions').update({ score: winPrize, finished: true }).eq('id', gameSession.id);
-                    await supabaseAdmin.from('event_players').update({ score: winPrize }).eq('event_id', roundFull.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '');
+                    await supabaseAdmin.from('event_players').update({ score: winPrize, stage: 'finished' }).eq('event_id', roundFull.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '');
                     const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id').eq('event_id', roundFull.event_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '').order('score', { ascending: false }).order('total_time_ms', { ascending: true });
                     if (ranked?.length) { for (let i = 0; i < ranked.length; i++) { await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 }).eq('event_id', roundFull.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? ''); } }
+                    const seasonId = (roundFull.events as { season_id?: number })?.season_id;
+                    if (seasonId) {
+                        const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', winPrize);
+                        await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: sel.player_id, score: winPrize, position: (count ?? 0) + 1 });
+                    }
                     await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
                     return { success: true, message: "¡Correcto! No hay más preguntas. ¡Ganó!", finished: true };
                 }
@@ -494,9 +499,14 @@ export const liveSessionsActions = {
                 if (availableIds.length === 0) {
                     const winPrize = level?.money_value ?? level?.points ?? 0;
                     await supabaseAdmin.from('game_sessions').update({ score: winPrize, finished: true }).eq('id', gameSession.id);
-                    await supabaseAdmin.from('event_players').update({ score: winPrize }).eq('event_id', roundFull.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '');
+                    await supabaseAdmin.from('event_players').update({ score: winPrize, stage: 'finished' }).eq('event_id', roundFull.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '');
                     const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id').eq('event_id', roundFull.event_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '').order('score', { ascending: false }).order('total_time_ms', { ascending: true });
                     if (ranked?.length) { for (let i = 0; i < ranked.length; i++) { await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 }).eq('event_id', roundFull.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? ''); } }
+                    const seasonId = (roundFull.events as { season_id?: number })?.season_id;
+                    if (seasonId) {
+                        const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', winPrize);
+                        await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: sel.player_id, score: winPrize, position: (count ?? 0) + 1 });
+                    }
                     await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
                     return { success: true, message: "¡Correcto! No hay más preguntas. ¡Ganó!", finished: true };
                 }
@@ -516,10 +526,15 @@ export const liveSessionsActions = {
                 if (safeLevelsPassed.length > 0) prizeMoney = safeLevelsPassed[safeLevelsPassed.length - 1].money_value || 0;
                 await supabaseAdmin.rpc('insert_game_answer', { p_game_session_id: gameSession.id, p_round_id: rId, p_event_id: roundFull.event_id, p_player_id: sel.player_id, p_classroom_group_id: roundFull.classroom_group_id ?? '', p_question_id: round.current_question_id, p_answer_id: sel.answer_id, p_is_correct: false, p_response_time_ms: 0, p_money_at_question: 0, p_level_id: question?.level_id || 1 });
                 await supabaseAdmin.from('game_sessions').update({ score: prizeMoney, finished: true }).eq('id', gameSession.id);
-                await supabaseAdmin.from('event_players').update({ score: prizeMoney }).eq('event_id', roundFull.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '');
+                await supabaseAdmin.from('event_players').update({ score: prizeMoney, stage: 'finished' }).eq('event_id', roundFull.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '');
                 await supabaseAdmin.from('student_answer_selection').delete().eq('round_id', rId).eq('question_id', round.current_question_id);
                 const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id').eq('event_id', roundFull.event_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '').order('score', { ascending: false }).order('total_time_ms', { ascending: true }).order('player_id', { ascending: true });
                 if (ranked?.length) { for (let i = 0; i < ranked.length; i++) { await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 }).eq('event_id', roundFull.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? ''); } }
+                const seasonId = (roundFull.events as { season_id?: number })?.season_id;
+                if (seasonId) {
+                    const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', prizeMoney);
+                    await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: sel.player_id, score: prizeMoney, position: (count ?? 0) + 1 });
+                }
                 await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
                 return { success: true, message: `Incorrecto. Premio: $${prizeMoney.toLocaleString('es-CO')}`, finished: true };
             }
@@ -539,7 +554,7 @@ export const liveSessionsActions = {
 
             const { data: round } = await supabaseAdmin
                 .from('event_rounds')
-                .select('*, events(program_id)')
+                .select('*, events(program_id, season_id)')
                 .eq('id', rId)
                 .single();
 
@@ -628,12 +643,17 @@ export const liveSessionsActions = {
                 if (!nextLevelId) {
                     const winPrize = level?.money_value ?? level?.points ?? 0;
                     await supabaseAdmin.from('game_sessions').update({ score: winPrize, finished: true }).eq('id', gameSession.id);
-                    await supabaseAdmin.from('event_players').update({ score: winPrize }).eq('event_id', round.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
+                    await supabaseAdmin.from('event_players').update({ score: winPrize, stage: 'finished' }).eq('event_id', round.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
                     const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id').eq('event_id', round.event_id).eq('classroom_group_id', round.classroom_group_id ?? '').order('score', { ascending: false }).order('total_time_ms', { ascending: true });
                     if (ranked?.length) {
                         for (let i = 0; i < ranked.length; i++) {
                             await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 }).eq('event_id', round.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
                         }
+                    }
+                    const seasonId = (round.events as { season_id?: number })?.season_id;
+                    if (seasonId) {
+                        const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', winPrize);
+                        await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: sel.player_id, score: winPrize, position: (count ?? 0) + 1 });
                     }
                     await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
                     return { success: true, message: "¡Correcto! No hay más preguntas. ¡Ganó!", finished: true };
@@ -655,12 +675,17 @@ export const liveSessionsActions = {
                     // No hay preguntas para el siguiente nivel: usa el premio del nivel actual
                     const winPrize = level?.money_value ?? level?.points ?? 0;
                     await supabaseAdmin.from('game_sessions').update({ score: winPrize, finished: true }).eq('id', gameSession.id);
-                    await supabaseAdmin.from('event_players').update({ score: winPrize }).eq('event_id', round.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
+                    await supabaseAdmin.from('event_players').update({ score: winPrize, stage: 'finished' }).eq('event_id', round.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
                     const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id').eq('event_id', round.event_id).eq('classroom_group_id', round.classroom_group_id ?? '').order('score', { ascending: false }).order('total_time_ms', { ascending: true });
                     if (ranked?.length) {
                         for (let i = 0; i < ranked.length; i++) {
                             await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 }).eq('event_id', round.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
                         }
+                    }
+                    const seasonId = (round.events as { season_id?: number })?.season_id;
+                    if (seasonId) {
+                        const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', winPrize);
+                        await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: sel.player_id, score: winPrize, position: (count ?? 0) + 1 });
                     }
                     await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
                     return { success: true, message: "¡Correcto! No hay más preguntas. ¡Ganó!", finished: true };
@@ -711,7 +736,7 @@ export const liveSessionsActions = {
                 });
 
                 await supabaseAdmin.from('game_sessions').update({ score: prizeMoney, finished: true }).eq('id', gameSession.id);
-                await supabaseAdmin.from('event_players').update({ score: prizeMoney }).eq('event_id', round.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
+                await supabaseAdmin.from('event_players').update({ score: prizeMoney, stage: 'finished' }).eq('event_id', round.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
                 await supabaseAdmin.from('student_answer_selection').delete().eq('round_id', rId).eq('question_id', round.current_question_id);
 
                 const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id')
@@ -723,6 +748,12 @@ export const liveSessionsActions = {
                         await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 })
                             .eq('event_id', round.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
                     }
+                }
+
+                const seasonId = (round.events as { season_id?: number })?.season_id;
+                if (seasonId) {
+                    const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', prizeMoney);
+                    await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: sel.player_id, score: prizeMoney, position: (count ?? 0) + 1 });
                 }
 
                 await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
@@ -741,11 +772,36 @@ export const liveSessionsActions = {
             const rId = parseInt(round_id);
             const { data: round } = await supabaseAdmin
                 .from('event_rounds')
-                .select('event_id, classroom_group_id')
+                .select('event_id, classroom_group_id, events(game_mode_id, season_id)')
                 .eq('id', rId)
                 .single();
 
             if (!round) throw new Error("Ronda no encontrada");
+
+            const evt = round.events as { game_mode_id?: number; season_id?: number } | null;
+            const isClasico = evt?.game_mode_id === 2;
+
+            // Si es Clásico (Silla Caliente): marcar game_sessions y event_players del participante activo
+            if (isClasico) {
+                const { data: ac } = await supabaseAdmin.from('active_contestants').select('player_id').eq('event_id', round.event_id).maybeSingle();
+                if (ac?.player_id) {
+                    const { data: gs } = await supabaseAdmin.from('game_sessions').select('id, score').eq('player_id', ac.player_id).eq('event_id', round.event_id).eq('finished', false).maybeSingle();
+                    const { data: ep } = await supabaseAdmin.from('event_players').select('score').eq('event_id', round.event_id).eq('player_id', ac.player_id).eq('classroom_group_id', round.classroom_group_id ?? '').maybeSingle();
+                    const finalScore = gs?.score ?? ep?.score ?? 0;
+
+                    if (gs) {
+                        await supabaseAdmin.from('game_sessions').update({ score: finalScore, finished: true }).eq('id', gs.id);
+                    }
+                    await supabaseAdmin.from('event_players').update({ score: finalScore, stage: 'finished' })
+                        .eq('event_id', round.event_id).eq('player_id', ac.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
+
+                    const seasonId = evt?.season_id;
+                    if (seasonId && finalScore > 0) {
+                        const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', finalScore);
+                        await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: ac.player_id, score: finalScore, position: (count ?? 0) + 1 });
+                    }
+                }
+            }
 
             // Calcular y guardar final_rank (score DESC, total_time_ms ASC)
             const { data: ranked } = await supabaseAdmin
@@ -762,7 +818,8 @@ export const liveSessionsActions = {
                     const isWinner = i === 0;
                     await supabaseAdmin.from('event_players').update({
                         final_rank: i + 1,
-                        is_finalist: isWinner
+                        is_finalist: isWinner,
+                        ...(isClasico ? { stage: 'finished' as const } : {})
                     })
                         .eq('event_id', round.event_id)
                         .eq('player_id', ranked[i].player_id)
