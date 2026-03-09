@@ -49,11 +49,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
 
     // Buscar por event_round_id (más fiable) o por id
-    let ffRound: { id: number; sequence_id: number } | null = null;
+    let ffRound: { id: number; sequence_id: number; event_round_id: number } | null = null;
     if (!isNaN(eventRoundId)) {
         const res = await supabaseAdmin
             .from("fastest_finger_rounds")
-            .select("id, sequence_id")
+            .select("id, sequence_id, event_round_id")
             .eq("event_round_id", eventRoundId)
             .maybeSingle();
         ffRound = res.data;
@@ -63,7 +63,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         if (!isNaN(ffRoundId)) {
             const res = await supabaseAdmin
                 .from("fastest_finger_rounds")
-                .select("id, sequence_id")
+                .select("id, sequence_id, event_round_id")
                 .eq("id", ffRoundId)
                 .maybeSingle();
             ffRound = res.data;
@@ -75,6 +75,27 @@ export const POST: APIRoute = async ({ request, locals }) => {
             status: 404,
             headers: { "Content-Type": "application/json" },
         });
+    }
+
+    // Verificar que el jugador es finalista (solo finalistas pueden participar en Mente más Rápida)
+    const { data: round } = await supabaseAdmin
+        .from("event_rounds")
+        .select("event_id")
+        .eq("id", ffRound.event_round_id)
+        .single();
+    if (round) {
+        const { data: ep } = await supabaseAdmin
+            .from("event_players")
+            .select("is_finalist")
+            .eq("event_id", round.event_id)
+            .eq("player_id", player.id)
+            .maybeSingle();
+        if (!ep?.is_finalist) {
+            return new Response(JSON.stringify({ error: "Solo los finalistas pueden participar en Mente más Rápida" }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+            });
+        }
     }
 
     const ffRoundId = ffRound.id;

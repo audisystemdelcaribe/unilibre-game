@@ -17,6 +17,15 @@ export const lifelinesActions = {
             const rId = parseInt(round_id);
             const qId = parseInt(question_id);
 
+            const { data: alreadyUsed } = await supabaseAdmin
+                .from('round_lifeline_usage')
+                .select('id')
+                .eq('round_id', rId)
+                .eq('lifeline_code', '5050')
+                .limit(1)
+                .maybeSingle();
+            if (alreadyUsed) throw new Error("El comodín 50:50 ya fue usado en esta sesión.");
+
             const { data: answers } = await supabaseAdmin
                 .from('answers')
                 .select('id, is_correct')
@@ -94,18 +103,39 @@ export const lifelinesActions = {
             const { data: currentQ } = await supabaseAdmin.from('questions').select('level_id').eq('id', qId).single();
             if (!currentQ?.level_id) throw new Error("Pregunta no encontrada");
 
-            const { data: round } = await supabaseAdmin.from('event_rounds').select('event_id, events(program_id)').eq('id', rId).single();
+            const { data: round } = await supabaseAdmin.from('event_rounds').select('event_id, events(program_id, game_mode_id)').eq('id', rId).single();
             if (!round) throw new Error("Ronda no encontrada");
+
+            const { data: cambiarUsed } = await supabaseAdmin
+                .from('round_lifeline_usage')
+                .select('id')
+                .eq('round_id', rId)
+                .eq('lifeline_code', 'cambiar')
+                .limit(1)
+                .maybeSingle();
+            if (cambiarUsed) throw new Error("El comodín Cambiar pregunta ya fue usado en esta sesión.");
 
             let usedIds: number[] = [];
             const { data: shown } = await supabaseAdmin.from('round_questions_shown').select('question_id').eq('round_id', rId);
             if (shown?.length) usedIds = shown.map((s: { question_id: number }) => s.question_id).filter(Boolean);
             usedIds.push(qId);
 
+            // Silla Caliente: filtrar por semestre del concursante activo
+            let playerSemester: number | null = null;
+            const gameModeId = (round.events as { game_mode_id?: number })?.game_mode_id;
+            if (gameModeId === 2) {
+                const { data: ac } = await supabaseAdmin.from('active_contestants').select('player_id').eq('event_id', round.event_id).maybeSingle();
+                if (ac?.player_id) {
+                    const { data: pl } = await supabaseAdmin.from('players').select('semester').eq('id', ac.player_id).single();
+                    if (pl?.semester != null) playerSemester = pl.semester;
+                }
+            }
+
             const programId = (round.events as { program_id?: number })?.program_id;
             let query = supabaseAdmin.from('questions').select('id').eq('level_id', currentQ.level_id).eq('active', true);
             if (programId != null) query = query.or(`program_id.eq.${programId},scope.eq.global`);
             else query = query.eq('scope', 'global');
+            if (playerSemester != null) query = query.lte('min_semester', playerSemester).gte('max_semester', playerSemester);
             const { data: available } = await query;
             const availableIds = (available || []).map((q: { id: number }) => q.id).filter((id: number) => !usedIds.includes(id));
 
@@ -135,8 +165,17 @@ export const lifelinesActions = {
         handler: async ({ round_id, question_id }, context) => {
             await ensureStaff(context);
             const rId = parseInt(round_id);
-            const qId = parseInt(question_id);
 
+            const { data: alreadyUsed } = await supabaseAdmin
+                .from('round_lifeline_usage')
+                .select('id')
+                .eq('round_id', rId)
+                .eq('lifeline_code', 'llamada')
+                .limit(1)
+                .maybeSingle();
+            if (alreadyUsed) throw new Error("El comodín Llamada ya fue usado en esta sesión.");
+
+            const qId = parseInt(question_id);
             const { error } = await supabaseAdmin.from('round_lifeline_usage').upsert({
                 round_id: rId,
                 question_id: qId,
@@ -155,8 +194,17 @@ export const lifelinesActions = {
         handler: async ({ round_id, question_id }, context) => {
             await ensureStaff(context);
             const rId = parseInt(round_id);
-            const qId = parseInt(question_id);
 
+            const { data: alreadyUsed } = await supabaseAdmin
+                .from('round_lifeline_usage')
+                .select('id')
+                .eq('round_id', rId)
+                .eq('lifeline_code', 'publico')
+                .limit(1)
+                .maybeSingle();
+            if (alreadyUsed) throw new Error("El comodín Ayuda del público ya fue usado en esta sesión.");
+
+            const qId = parseInt(question_id);
             const { error } = await supabaseAdmin.from('round_lifeline_usage').upsert({
                 round_id: rId,
                 question_id: qId,

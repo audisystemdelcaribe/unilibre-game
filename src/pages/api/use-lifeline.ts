@@ -48,6 +48,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const qId = parseInt(question_id);
     const code = lifeline_code.toLowerCase();
 
+    const { data: existing } = await supabaseAdmin
+        .from("round_lifeline_usage")
+        .select("id")
+        .eq("round_id", rId)
+        .eq("lifeline_code", code)
+        .limit(1)
+        .maybeSingle();
+    if (existing) {
+        return new Response(JSON.stringify({ error: "Este comodín ya fue usado en esta sesión" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
     if (code === "llamada") {
         const { error } = await supabaseAdmin.from("round_lifeline_usage").upsert(
             { round_id: rId, question_id: qId, lifeline_code: "llamada", metadata: { used: true } },

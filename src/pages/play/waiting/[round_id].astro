@@ -16,7 +16,7 @@ const { data: player } = await Astro.locals.supabase
 
 const { data: round, error } = await Astro.locals.supabase
     .from('event_rounds')
-    .select('*, events(name)')
+    .select('*, events(name, game_mode_id)')
     .eq('id', round_id)
     .single();
 
@@ -30,10 +30,20 @@ if (isMenteRapida && round.status === 'finished') {
     return Astro.redirect("/play?error=fin_participacion");
 }
 
+// Mente más Rápida: solo finalistas pueden entrar; verificar antes de redirigir
+const { data: ep } = await Astro.locals.supabase
+    .from('event_players')
+    .select('is_finalist')
+    .eq('event_id', round.event_id)
+    .eq('player_id', player.id)
+    .maybeSingle();
+const isFinalist = ep?.is_finalist === true;
+
 // Evitar bucle: si venimos de un error en fastest, no redirigir de vuelta
 const fromFastestError = Astro.url.searchParams.get('from') === 'fastest_error';
-if (!fromFastestError) {
-    if (round.status === 'fastest_finger') return Astro.redirect(`/play/fastest/${round_id}`);
+const noFinalista = Astro.url.searchParams.get('error') === 'no_finalista';
+if (!fromFastestError && !noFinalista) {
+    if (round.status === 'fastest_finger' && isFinalist) return Astro.redirect(`/play/fastest/${round_id}`);
     if (round.status === 'active') return Astro.redirect(`/play/game/${round_id}`);
 }
 
@@ -86,7 +96,13 @@ const myGradient = gradients[player.id % gradients.length];
 
                     <!-- Indicador de conexión -->
                     <div class="flex flex-col items-center gap-3">
-                        {fromFastestError ? (
+                        {(noFinalista || (round.status === 'fastest_finger' && !isFinalist)) ? (
+                            <div class="bg-amber-500/20 border border-amber-500/50 rounded-2xl px-6 py-4 text-center">
+                                <p class="text-amber-200 text-sm font-bold mb-2">Solo finalistas</p>
+                                <p class="text-white/70 text-xs mb-3">Solo los ganadores de la preselección pueden participar en Mente más Rápida.</p>
+                                <a href="/play" class="btn btn-sm btn-ghost text-white">Volver al inicio</a>
+                            </div>
+                        ) : fromFastestError ? (
                             <div class="bg-amber-500/20 border border-amber-500/50 rounded-2xl px-6 py-4 text-center">
                                 <p class="text-amber-200 text-sm font-bold mb-2">El reto aún no está listo</p>
                                 <p class="text-white/70 text-xs mb-3">Espera unos segundos y haz clic para reintentar.</p>
@@ -98,9 +114,11 @@ const myGradient = gradients[player.id % gradients.length];
                                     <span class="loading loading-spinner loading-xs text-white"></span>
                                     <span class="text-[10px] font-black uppercase tracking-[0.2em] text-white/90">Sincronizando...</span>
                                 </div>
-                                <a href={`/play/fastest/${round_id}`} class="text-white/60 hover:text-white text-[10px] font-bold underline underline-offset-2 transition-colors">
-                                    ¿El docente ya activó Mente más Rápida? Entra aquí
-                                </a>
+                                {isMenteRapida && (
+                                    <a href={`/play/fastest/${round_id}`} class="text-white/60 hover:text-white text-[10px] font-bold underline underline-offset-2 transition-colors">
+                                        ¿El docente ya activó Mente más Rápida? Entra aquí
+                                    </a>
+                                )}
                             </>
                         )}
                     </div>
@@ -141,11 +159,12 @@ const myGradient = gradients[player.id % gradients.length];
         }
     </style>
 
-    <script is:inline define:vars={{ roundId: round_id }}>
+    <script is:inline define:vars={{ roundId: round_id, isFinalist }}>
         let yaRedirigido = false;
 
         function irAlJuego(status) {
             if (yaRedirigido) return;
+            if (status === 'fastest_finger' && !isFinalist) return; // No redirigir no finalistas a Mente más Rápida
             yaRedirigido = true;
             if (status === 'fastest_finger') {
                 window.location.href = `/play/fastest/${roundId}`;

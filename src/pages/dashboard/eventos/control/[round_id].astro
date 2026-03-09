@@ -130,15 +130,14 @@ const isWaiting = round?.status === 'waiting';
 const isActive = round?.status === 'active';
 const isFinished = round?.status === 'finished';
 
-// Comodines ya usados (solo Clásico)
+// Comodines ya usados en la sesión (por ronda completa, no por pregunta)
 let usedLifelines: string[] = [];
-if (isClasico && round?.current_question_id && (isActive || isWaiting)) {
+if (isClasico && (isActive || isWaiting)) {
     const { data: usage } = await supabaseAdmin
         .from('round_lifeline_usage')
         .select('lifeline_code')
-        .eq('round_id', parseInt(round_id))
-        .eq('question_id', round.current_question_id);
-    usedLifelines = (usage || []).map((u) => u.lifeline_code);
+        .eq('round_id', parseInt(round_id));
+    usedLifelines = [...new Set((usage || []).map((u) => u.lifeline_code))];
 }
 
 const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound) || Astro.getActionResult(actions.launchFastestFinger) || Astro.getActionResult(actions.confirmWinner) || Astro.getActionResult(actions.useLifeline5050) || Astro.getActionResult(actions.useLifelineCambiarPregunta) || Astro.getActionResult(actions.useLifelineLlamada) || Astro.getActionResult(actions.useLifelinePublico) || Astro.getActionResult(actions.verifyClasicoAnswer);

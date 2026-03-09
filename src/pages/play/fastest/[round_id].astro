@@ -65,12 +65,13 @@ if (!player) return Astro.redirect("/");
 
 const { data: inEvent } = await Astro.locals.supabase
     .from('event_players')
-    .select('player_id')
+    .select('player_id, is_finalist')
     .eq('event_id', round.event_id)
     .eq('player_id', player.id)
     .maybeSingle();
 
 if (!inEvent) return Astro.redirect("/play?error=debes_unirte_con_pin");
+if (!inEvent.is_finalist) return Astro.redirect(`/play/waiting/${round_id}?error=no_finalista`);
 
 function shuffle<T>(arr: T[]): T[] {
     const a = [...arr];

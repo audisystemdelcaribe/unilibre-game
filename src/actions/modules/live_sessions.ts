@@ -91,11 +91,24 @@ export const liveSessionsActions = {
             if (!player?.id) throw new Error("Perfil de jugador no encontrado");
 
             const gameModeId = (round.events as { game_mode_id?: number })?.game_mode_id;
+            const roundStatus = (round as { status?: string })?.status;
 
             // 2a. "Ayudar a participante": siempre ir como público
             if (as_audience) return { success: true, round_id: round.id, audience_only: true };
 
-            // 2b. Silla Caliente (Clásico=2): ganador juega; otros con PIN van como público
+            // 2b. Mente más Rápida: solo finalistas (por game_mode 3 o por status fastest_finger)
+            if (gameModeId === 3 || roundStatus === 'fastest_finger') {
+                const { data: finalists } = await supabaseAdmin
+                    .from('event_players')
+                    .select('id')
+                    .eq('player_id', player.id)
+                    .eq('event_id', round.event_id)
+                    .eq('is_finalist', true)
+                    .limit(1);
+                if (!finalists?.length) throw new Error("Solo los finalistas (ganadores de preselección) pueden participar en Mente más Rápida.");
+            }
+
+            // 2c. Silla Caliente (Clásico=2): ganador juega; otros con PIN van como público
             if (gameModeId === 2) {
                 const { data: ac } = await supabaseAdmin
                     .from('active_contestants')
@@ -105,17 +118,6 @@ export const liveSessionsActions = {
                 if (!ac || ac.player_id !== player.id) {
                     return { success: true, round_id: round.id, audience_only: true };
                 }
-            }
-
-            // 2c. Mente más Rápida (3): solo finalistas de preselección
-            if (gameModeId === 3) {
-                const { data: finalists } = await supabaseAdmin
-                    .from('event_players')
-                    .select('id')
-                    .eq('player_id', player.id)
-                    .eq('is_finalist', true)
-                    .limit(1);
-                if (!finalists?.length) throw new Error("Solo los finalistas (ganadores de preselección) pueden participar en Mente más Rápida.");
             }
 
             // 3. UPSERT DE SESIÓN (Ahora funcionará gracias al SQL de arriba)
@@ -314,11 +316,30 @@ export const liveSessionsActions = {
             // 1. Obtener datos de la ronda y el programa
             const { data: round } = await supabaseAdmin
                 .from('event_rounds')
-                .select('*, events(program_id)')
+                .select('*, events(program_id, game_mode_id)')
                 .eq('id', parseInt(round_id))
                 .single();
 
             if (!round) throw new Error("Ronda no encontrada");
+
+            // 1b. Silla Caliente: obtener semestre del concursante activo para filtrar preguntas
+            let playerSemester: number | null = null;
+            const gameModeId = (round.events as { game_mode_id?: number })?.game_mode_id;
+            if (gameModeId === 2) {
+                const { data: ac } = await supabaseAdmin
+                    .from('active_contestants')
+                    .select('player_id')
+                    .eq('event_id', round.event_id)
+                    .maybeSingle();
+                if (ac?.player_id) {
+                    const { data: pl } = await supabaseAdmin
+                        .from('players')
+                        .select('semester')
+                        .eq('id', ac.player_id)
+                        .single();
+                    if (pl?.semester != null) playerSemester = pl.semester;
+                }
+            }
 
             // 2. Preguntas ya usadas: round_questions_shown (o fallback a game_answers)
             let usedIds: number[] = [];
@@ -362,6 +383,11 @@ export const liveSessionsActions = {
                 query = query.eq('scope', 'global');
             }
 
+            // Silla Caliente: solo preguntas cuyo rango [min_semester, max_semester] incluya el semestre del estudiante
+            if (playerSemester != null) {
+                query = query.lte('min_semester', playerSemester).gte('max_semester', playerSemester);
+            }
+
             const { data: allMatching } = await query;
 
             // Filtrar en JS para garantizar que NUNCA repetimos (más fiable que .not() de Supabase)
@@ -370,7 +396,8 @@ export const liveSessionsActions = {
                 .filter((id: number) => !usedIds.includes(id));
 
             if (availableIds.length === 0) {
-                throw new Error("¡Se agotaron las preguntas de este nivel para esta sesión! Puedes finalizar el juego o agregar más preguntas de Nivel 1.");
+                const hint = playerSemester != null ? ` (semestre ${playerSemester} o compatible)` : '';
+                throw new Error(`¡Se agotaron las preguntas de este nivel para esta sesión${hint}! Puedes finalizar el juego o agregar más preguntas de Nivel 1.`);
             }
 
             // 4. Azar y actualización (solo de las no usadas)
@@ -454,9 +481,14 @@ export const liveSessionsActions = {
                     await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
                     return { success: true, message: "¡Correcto! No hay más preguntas. ¡Ganó!", finished: true };
                 }
+                // Silla Caliente: filtrar por semestre del estudiante (min_semester <= semestre <= max_semester)
+                const { data: plSem } = await supabaseAdmin.from('players').select('semester').eq('id', sel.player_id).single();
+                const playerSemester = plSem?.semester ?? null;
+
                 let query = supabaseAdmin.from('questions').select('id').eq('level_id', nextLevelId).eq('active', true);
                 if (programId != null) query = query.or(`program_id.eq.${programId},scope.eq.global`);
                 else query = query.eq('scope', 'global');
+                if (playerSemester != null) query = query.lte('min_semester', playerSemester).gte('max_semester', playerSemester);
                 const { data: available } = await query;
                 const availableIds = (available || []).map((q: any) => q.id).filter((id: number) => !usedIds.includes(id));
                 if (availableIds.length === 0) {
@@ -607,9 +639,14 @@ export const liveSessionsActions = {
                     return { success: true, message: "¡Correcto! No hay más preguntas. ¡Ganó!", finished: true };
                 }
 
+                // Silla Caliente: filtrar por semestre del estudiante (min_semester <= semestre <= max_semester)
+                const { data: plSem } = await supabaseAdmin.from('players').select('semester').eq('id', sel.player_id).single();
+                const playerSemester = plSem?.semester ?? null;
+
                 let query = supabaseAdmin.from('questions').select('id').eq('level_id', nextLevelId).eq('active', true);
                 if (programId != null) query = query.or(`program_id.eq.${programId},scope.eq.global`);
                 else query = query.eq('scope', 'global');
+                if (playerSemester != null) query = query.lte('min_semester', playerSemester).gte('max_semester', playerSemester);
                 const { data: available } = await query;
 
                 const availableIds = (available || []).map((q: any) => q.id).filter((id: number) => !usedIds.includes(id));

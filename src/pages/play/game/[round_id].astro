@@ -63,10 +63,29 @@ if (!gameSession && player) {
 
 // Comodines: solo para juego final (Clásico)
 let lifelines: { id: number; name: string; code: string | null }[] = [];
+let usedLifelinesInRound: string[] = [];
 if (round?.events?.game_mode_id === 2) {
     const { data } = await Astro.locals.supabase.from('lifelines').select('id, name, code').order('name', { ascending: true });
     lifelines = data || [];
+    const { data: usage } = await supabaseAdmin
+        .from('round_lifeline_usage')
+        .select('lifeline_code')
+        .eq('round_id', parseInt(String(round_id)));
+    usedLifelinesInRound = [...new Set((usage || []).map((u) => u.lifeline_code))];
 }
+
+// Silla Caliente: orden aleatorio de respuestas
+function shuffle<T>(arr: T[]): T[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+const displayAnswers = isJuegoFinal && round?.questions?.answers
+    ? shuffle(round.questions.answers)
+    : (round?.questions?.answers ?? []);
 
 // 3. Procesar resultado de la acción
 const result = Astro.getActionResult(actions.submitAnswer);
@@ -109,11 +128,27 @@ const debugResult = result ? {
             <div class="flex items-center gap-4">
                 {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
                     <div id="lifelines-bar" class="flex gap-2 flex-wrap">
-                        {lifelines.map((l) => (
-                            <span class="lifeline-badge px-3 py-1 rounded-xl text-xs font-bold border bg-amber-500/20 border-amber-500/50 text-amber-400" data-code={l.code || ''} data-name={l.name}>
-                                {l.name}
-                            </span>
-                        ))}
+                        {lifelines.map((l) => {
+                            const code = (l.code || '').toLowerCase();
+                            const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
+                            const isCambiar = code === 'cambiar' || code === 'saltar' || (l.name || '').toLowerCase().includes('cambiar');
+                            const isPublico = code === 'publico' || (l.name || '').toLowerCase().includes('público') || (l.name || '').toLowerCase().includes('publico');
+                            const isLlamada = code === 'llamada' || (l.name || '').toLowerCase().includes('llamada');
+                            const lifelineCode = is5050 ? '5050' : isCambiar ? 'cambiar' : isPublico ? 'publico' : isLlamada ? 'llamada' : code;
+                            const isUsed = usedLifelinesInRound.includes(lifelineCode);
+                            return (
+                                <span
+                                    class:list={[
+                                        'lifeline-badge px-3 py-1 rounded-xl text-xs font-bold border',
+                                        isUsed ? 'bg-zinc-800/50 border-zinc-600 text-zinc-500 opacity-60 line-through' : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
+                                    ]}
+                                    data-code={l.code || ''}
+                                    data-name={l.name}
+                                >
+                                    {l.name}{isUsed ? ' (usado)' : ''}
+                                </span>
+                            );
+                        })}
                     </div>
                 )}
                 {!isJuegoFinal && (
@@ -165,7 +200,7 @@ const debugResult = result ? {
                             <input type="hidden" name="question_id" value={round?.current_question_id} />
                             <input type="hidden" name="session_id" value={gameSession?.id} />
 
-                            {round?.questions?.answers.map((ans: any, idx: number) => (
+                            {displayAnswers.map((ans: any, idx: number) => (
                                     <button
                                             type="button"
                                             data-answer-id={ans.id}
@@ -211,11 +246,30 @@ const debugResult = result ? {
         let lifeline5050Applied = false;
         async function checkLifelineState() {
             if (!isJuegoFinal) return;
-            if (!questionId || !roundId || lifeline5050Applied) return;
+            if (!roundId) return;
             try {
-                const r = await fetch(`/api/round-lifeline-state?round_id=${roundId}&question_id=${questionId}`);
-                const { used } = await r.json();
-                if (used?.['5050'] && form) {
+                const r = await fetch(`/api/round-lifeline-state?round_id=${roundId}&question_id=${questionId || ''}`);
+                const { used, used_in_round } = await r.json();
+
+                // Marcar comodines usados en la sesión como inactivos
+                const usedCodes = (used_in_round || []).map((c) => (c || '').toLowerCase());
+                document.querySelectorAll('.lifeline-badge').forEach((b) => {
+                    const c = (b.dataset?.code || '').toLowerCase();
+                    const n = (b.dataset?.name || '').toLowerCase();
+                    const is5050 = c === '5050' || c.includes('50') || n.includes('50') || n.includes('50:50');
+                    const isCambiar = c === 'cambiar' || c === 'saltar' || n.includes('cambiar');
+                    const isPublico = c === 'publico' || n.includes('público') || n.includes('publico');
+                    const isLlamada = c === 'llamada' || n.includes('llamada');
+                    const code = is5050 ? '5050' : isCambiar ? 'cambiar' : isPublico ? 'publico' : isLlamada ? 'llamada' : c;
+                    const isUsed = usedCodes.includes(code || '');
+                    if (isUsed) {
+                        b.classList.add('opacity-40', 'line-through', 'text-zinc-500');
+                        b.classList.remove('text-amber-400');
+                    }
+                });
+
+                // Aplicar 50:50 (ocultar 2 respuestas) solo para la pregunta actual
+                if (used?.['5050'] && form && !lifeline5050Applied) {
                     const meta = used['5050'];
                     const hideIds = (typeof meta === 'object' && meta?.hide_ids) ? meta.hide_ids : [];
                     if (Array.isArray(hideIds)) {
@@ -228,13 +282,6 @@ const debugResult = result ? {
                             }
                         });
                     }
-                    document.querySelectorAll('.lifeline-badge').forEach(b => {
-                        const c = (b.dataset?.code || '').toLowerCase();
-                        const n = (b.dataset?.name || '').toLowerCase();
-                        if (c === '5050' || c.includes('50') || n.includes('50') || n.includes('50:50')) {
-                            b.classList.add('opacity-40', 'line-through');
-                        }
-                    });
                     lifeline5050Applied = true;
                 }
             } catch (_) {}
