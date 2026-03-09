@@ -3,6 +3,7 @@ import PlayLayout from "../../../layouts/PlayLayout.astro";
 import { actions } from "astro:actions";
 import { Icon } from 'astro-icon/components';
 import { supabaseAdmin } from "../../../lib/supabaseAdmin";
+import { seededShuffle } from "../../../lib/utils";
 
 const { round_id } = Astro.params;
 const user = await Astro.locals.getUser();
@@ -74,17 +75,9 @@ if (round?.events?.game_mode_id === 2) {
     usedLifelinesInRound = [...new Set((usage || []).map((u) => u.lifeline_code))];
 }
 
-// Silla Caliente: orden aleatorio de respuestas
-function shuffle<T>(arr: T[]): T[] {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-}
+// Silla Caliente: orden aleatorio pero determinístico (participante y público ven igual)
 const displayAnswers = isJuegoFinal && round?.questions?.answers
-    ? shuffle(round.questions.answers)
+    ? seededShuffle(round.questions.answers, (round.id || 0) * 31 + (round.current_question_id || 0))
     : (round?.questions?.answers ?? []);
 
 // 3. Procesar resultado de la acción
@@ -121,6 +114,9 @@ const debugResult = result ? {
                     {player?.name?.charAt(0).toUpperCase()}
                 </div>
                 <div>
+                    {isJuegoFinal && player?.name && (
+                        <p class="text-sm font-bold text-white leading-none mb-1">{player.name}</p>
+                    )}
                     <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos</p>
                     <p class="text-xl font-black text-primary leading-none tabular-nums">{gameSession?.score || 0}</p>
                 </div>

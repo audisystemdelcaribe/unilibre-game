@@ -1,6 +1,7 @@
 ---
 import PlayLayout from "../../../layouts/PlayLayout.astro";
 import { supabaseAdmin } from "../../../lib/supabaseAdmin";
+import { seededShuffle } from "../../../lib/utils";
 
 const { round_id } = Astro.params;
 const user = await Astro.locals.getUser();
@@ -39,13 +40,17 @@ const { data: question } = round.current_question_id
           .single()
     : { data: null };
 
-const { data: answers } = question
-    ? await Astro.locals.supabase
+const rawAnswers = question
+    ? (await Astro.locals.supabase
           .from("answers")
           .select("id, answer_text")
           .eq("question_id", question.id)
-          .order("id")
-    : { data: [] };
+          .order("id")).data ?? []
+    : [];
+// Mismo orden que el participante (seeded shuffle)
+const answers = rawAnswers.length > 0
+    ? seededShuffle(rawAnswers, rId * 31 + (round.current_question_id || 0))
+    : rawAnswers;
 
 const letters = ["A", "B", "C", "D"];
 const url = Astro.url;

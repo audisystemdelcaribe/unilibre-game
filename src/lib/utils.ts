@@ -5,6 +5,18 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
 
+/** Shuffle determinístico por semilla: mismo seed → mismo orden (participante y público ven igual) */
+export function seededShuffle<T>(arr: T[], seed: number): T[] {
+	const a = [...arr];
+	let s = seed;
+	for (let i = a.length - 1; i > 0; i--) {
+		s = (s * 1103515245 + 12345) & 0x7fffffff;
+		const j = s % (i + 1);
+		[a[i], a[j]] = [a[j], a[i]];
+	}
+	return a;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WithoutChild<T> = T extends { child?: any } ? Omit<T, "child"> : T;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

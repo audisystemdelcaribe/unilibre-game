@@ -1,10 +1,12 @@
 import type { APIRoute } from "astro";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { seededShuffle } from "@/lib/utils";
 
 /**
  * GET: Obtener votos del público para una pregunta (para mostrar gráfica de barras)
+ * Usa el mismo orden de respuestas que el participante (seeded shuffle)
  */
-export const GET: APIRoute = async ({ url, locals }) => {
+export const GET: APIRoute = async ({ url }) => {
     const roundId = url.searchParams.get("round_id");
     const questionId = url.searchParams.get("question_id");
     if (!roundId || !questionId) {
@@ -14,11 +16,16 @@ export const GET: APIRoute = async ({ url, locals }) => {
         });
     }
 
-    const { data: answers } = await supabaseAdmin
+    const rId = parseInt(roundId);
+    const qId = parseInt(questionId);
+    const { data: rawAnswers } = await supabaseAdmin
         .from("answers")
         .select("id, answer_text")
-        .eq("question_id", parseInt(questionId))
+        .eq("question_id", qId)
         .order("id");
+    const answers = (rawAnswers || []).length > 0
+        ? seededShuffle(rawAnswers!, rId * 31 + qId)
+        : rawAnswers || [];
 
     const letters = ["A", "B", "C", "D"];
     const votes: Record<string, number> = {};

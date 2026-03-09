@@ -130,6 +130,16 @@ const isWaiting = round?.status === 'waiting';
 const isActive = round?.status === 'active';
 const isFinished = round?.status === 'finished';
 
+// Participante en Silla Caliente (para mostrar nombre)
+let clasicoParticipantName = '';
+if (isClasico && (isActive || isWaiting)) {
+    const { data: ac } = await supabaseAdmin.from('active_contestants').select('player_id').eq('event_id', round.event_id).maybeSingle();
+    if (ac?.player_id) {
+        const { data: pl } = await supabaseAdmin.from('players').select('name').eq('id', ac.player_id).single();
+        clasicoParticipantName = pl?.name || 'Participante';
+    }
+}
+
 // Comodines ya usados en la sesión (por ronda completa, no por pregunta)
 let usedLifelines: string[] = [];
 let showAudienceVotes = false; // Solo mostrar votación si el comodín fue usado para la pregunta actual
@@ -257,13 +267,18 @@ if (confirmResult?.data?.clasico_round_id) {
                             ) : (
                                     <div>
                                         <p class="text-primary font-black italic uppercase text-xs mb-4">En curso:</p>
-                                        <h1 class="text-3xl font-bold italic" id="question-text">{qText}</h1>
+                                        {isClasico && clasicoParticipantName && (
+                                            <p class="text-amber-400 font-bold text-lg mb-2">Participante: {clasicoParticipantName}</p>
+                                        )}
+                                        <h1 class:list={["font-bold italic", isClasico ? "text-4xl md:text-5xl lg:text-6xl" : "text-3xl"]} id="question-text">{qText}</h1>
+                                        {!isClasico && (
                                         <div class="mt-8 flex gap-4">
                                             <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex-1 text-center">
                                                 <p class="text-[10px] text-zinc-500 uppercase font-black">Respondieron</p>
                                                 <p class="text-4xl font-black text-white" id="answered-count">0</p>
                                             </div>
                                         </div>
+                                        )}
                                         {isClasico && (
                                             <div id="audience-pin-box" class:list={["mt-4 p-4 bg-violet-500/20 border border-violet-500/50 rounded-2xl", !showAudienceVotes && "hidden"]}>
                                                 <p class="text-[10px] text-violet-400 uppercase font-black mb-1">PIN para unirse como público</p>
