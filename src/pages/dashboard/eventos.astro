@@ -30,6 +30,14 @@ const totalPages = Math.max(1, Math.ceil((totalCount ?? 0) / PAGE_SIZE));
 const hasPrev = page > 1;
 const hasNext = page < totalPages;
 
+// Números de página a mostrar
+const pageNumbers: number[] = [];
+const show = Math.min(5, totalPages);
+if (totalPages <= 5) for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
+else if (page <= 3) for (let i = 1; i <= show; i++) pageNumbers.push(i);
+else if (page >= totalPages - 2) for (let i = totalPages - 4; i <= totalPages; i++) pageNumbers.push(i);
+else for (let i = page - 2; i <= page + 2; i++) pageNumbers.push(i);
+
 // 4. Datos para los selectores del Modal
 const { data: seasons } = await Astro.locals.supabase.from('seasons').select('id, name').eq('status', 'active');
 const { data: modes } = await Astro.locals.supabase.from('game_modes').select('id, name');
@@ -110,19 +118,11 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
                 <a href={hasPrev ? `/dashboard/eventos?page=${page - 1}` : '#'} class={`join-item btn btn-sm ${!hasPrev ? 'btn-disabled pointer-events-none' : ''}`} aria-label="Anterior">
                     ‹
                 </a>
-                {(() => {
-                    const pages: number[] = [];
-                    const show = Math.min(5, totalPages);
-                    if (totalPages <= 5) for (let i = 1; i <= totalPages; i++) pages.push(i);
-                    else if (page <= 3) for (let i = 1; i <= show; i++) pages.push(i);
-                    else if (page >= totalPages - 2) for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
-                    else for (let i = page - 2; i <= page + 2; i++) pages.push(i);
-                    return pages.map((p) => (
-                        <a href={`/dashboard/eventos?page=${p}`} class={`join-item btn btn-sm ${p === page ? 'btn-primary' : ''}`}>
-                            {p}
-                        </a>
-                    ));
-                })()}
+                {pageNumbers.map((p) => (
+                    <a href={`/dashboard/eventos?page=${p}`} class={`join-item btn btn-sm ${p === page ? 'btn-primary' : ''}`}>
+                        {p}
+                    </a>
+                ))}
                 <a href={hasNext ? `/dashboard/eventos?page=${page + 1}` : '#'} class={`join-item btn btn-sm ${!hasNext ? 'btn-disabled pointer-events-none' : ''}`} aria-label="Siguiente">
                     ›
                 </a>
