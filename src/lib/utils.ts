@@ -17,6 +17,27 @@ export function seededShuffle<T>(arr: T[], seed: number): T[] {
 	return a;
 }
 
+/** Clase badge DaisyUI según modo de juego (1=Preselección, 2=Clásico, 3=Mente más Rápida) */
+export function getGameModeBadgeClass(modeId: number | null | undefined): string {
+	const base = "badge badge-sm font-bold text-[9px] uppercase";
+	const variant = {
+		1: "badge-primary",
+		2: "badge-secondary",
+		3: "badge-success",
+	}[modeId ?? 0] ?? "badge-accent";
+	return `${base} ${variant}`;
+}
+
+/** Clases para icono/fondo según modo de juego */
+export function getGameModeColorClass(modeId: number | null | undefined): string {
+	const map: Record<number, string> = {
+		1: "bg-primary/10 text-primary",
+		2: "bg-secondary/10 text-secondary",
+		3: "bg-success/10 text-success",
+	};
+	return map[modeId ?? 0] ?? "bg-accent/10 text-accent";
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type WithoutChild<T> = T extends { child?: any } ? Omit<T, "child"> : T;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

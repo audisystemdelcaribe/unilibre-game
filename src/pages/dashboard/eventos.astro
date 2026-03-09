@@ -4,6 +4,7 @@ import { actions } from "astro:actions";
 import { Icon } from 'astro-icon/components';
 import DeleteModal from "@/components/DeleteModal.astro";
 import FormButton from "@/components/FormButton.astro";
+import { getGameModeBadgeClass } from "@/lib/utils";
 
 const user = await Astro.locals.getUser();
 if (!user) return Astro.redirect("/");
@@ -76,7 +77,7 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
                             </div>
                         </td>
                         <td>
-                            <span class="badge badge-secondary badge-sm font-bold text-[9px] uppercase">{e.game_modes?.name}</span>
+                            <span class={getGameModeBadgeClass(e.game_mode_id)}>{e.game_modes?.name}</span>
                             <span class="badge badge-ghost badge-sm text-[9px] ml-1">{e.scope}</span>
                         </td>
                         <td class="text-sm font-medium text-slate-600">
