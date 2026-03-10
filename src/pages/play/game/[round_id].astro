@@ -102,6 +102,14 @@ const debugResult = result ? {
 
 <PlayLayout title="¡Carrera en Vivo!">
     <style>
+        /* Ocultar scrollbar en barra de comodines (móvil) */
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
         /* Parpadeo: quitar transition para que la animación se vea (transition-all del botón lo ocultaba) */
         .option-btn.flash-green,
         .option-btn.flash-red,
@@ -146,17 +154,17 @@ const debugResult = result ? {
         </script>
     )}
 
-    <div class="flex flex-col min-h-screen h-screen max-h-[100dvh] p-3 sm:p-4 bg-zinc-950 text-white overflow-hidden font-sans">
+    <div class="flex flex-col min-h-screen h-screen max-h-[100dvh] p-2 sm:p-4 bg-zinc-950 text-white overflow-hidden font-sans">
 
         <!-- HEADER -->
-        <header class="flex justify-between items-center gap-2 bg-zinc-900 border border-zinc-800 p-3 sm:p-4 rounded-2xl sm:rounded-[2rem] mb-3 sm:mb-6 shadow-xl flex-shrink-0 flex-wrap sm:flex-nowrap">
-            <div class="flex items-center gap-3 sm:gap-4 min-w-0">
-                <div class="w-10 h-10 flex-shrink-0 bg-primary rounded-xl flex items-center justify-center font-black text-white italic">
+        <header class="flex justify-between items-center gap-2 bg-zinc-900 border border-zinc-800 p-2 sm:p-4 rounded-xl sm:rounded-[2rem] mb-2 sm:mb-6 shadow-xl flex-shrink-0 flex-nowrap">
+            <div class="flex items-center gap-2 sm:gap-4 min-w-0">
+                <div class="w-8 h-8 sm:w-10 sm:h-10 flex-shrink-0 bg-primary rounded-lg sm:rounded-xl flex items-center justify-center font-black text-white italic text-sm sm:text-base">
                     {player?.name?.charAt(0).toUpperCase()}
                 </div>
                 <div class="min-w-0">
                     {isJuegoFinal && player?.name ? (
-                        <p class="text-lg sm:text-xl md:text-2xl font-black text-white leading-tight truncate">{player.name}</p>
+                        <p class="text-base sm:text-xl md:text-2xl font-black text-white leading-tight truncate">{player.name}</p>
                     ) : (
                         <>
                             <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos</p>
@@ -165,9 +173,9 @@ const debugResult = result ? {
                     )}
                 </div>
             </div>
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="flex items-center gap-2 flex-shrink min-w-0 sm:flex-shrink-0">
                 {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
-                    <div id="lifelines-bar" class="flex gap-1.5 flex-wrap justify-end">
+                    <div id="lifelines-bar" class="flex gap-1 sm:gap-1.5 flex-nowrap overflow-x-auto overflow-y-hidden py-0.5 -mx-1 scrollbar-hide justify-end min-w-0 flex-1 sm:flex-initial">
                         {lifelines.map((l) => {
                             const code = (l.code || '').toLowerCase();
                             const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
@@ -176,17 +184,18 @@ const debugResult = result ? {
                             const isLlamada = code === 'llamada' || (l.name || '').toLowerCase().includes('llamada');
                             const lifelineCode = is5050 ? '5050' : isCambiar ? 'cambiar' : isPublico ? 'publico' : isLlamada ? 'llamada' : code;
                             const isUsed = usedLifelinesInRound.includes(lifelineCode);
+                            const shortName = is5050 ? '50:50' : isCambiar ? 'Cambiar' : isPublico ? 'Público' : isLlamada ? 'Llamada' : (l.name?.slice(0, 8) || l.name);
                             return (
                                 <span
                                     class:list={[
-                                        'lifeline-badge px-2 py-1 rounded-lg text-[10px] sm:text-xs font-semibold border',
+                                        'lifeline-badge px-1.5 py-0.5 sm:px-2 sm:py-1 rounded-md sm:rounded-lg text-[9px] sm:text-xs font-semibold border whitespace-nowrap shrink-0',
                                         isUsed ? 'bg-zinc-800/50 border-zinc-600 text-zinc-500 opacity-60 line-through' : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
                                     ]}
                                     data-code={l.code || ''}
                                     data-name={l.name}
                                     title={l.name}
                                 >
-                                    {l.name}{isUsed ? ' ✓' : ''}
+                                    {shortName}{isUsed ? ' ✓' : ''}
                                 </span>
                             );
                         })}
@@ -198,7 +207,7 @@ const debugResult = result ? {
             </div>
         </header>
 
-        <main class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-4 sm:gap-6 md:gap-8 min-h-0 overflow-y-auto overflow-x-hidden py-2">
+        <main class="flex-1 flex flex-col justify-start sm:justify-center max-w-4xl mx-auto w-full gap-3 sm:gap-6 md:gap-8 min-h-0 overflow-y-auto overflow-x-hidden py-0 sm:py-2">
             {hasResponded ? (
                     <div class="flex flex-col items-center justify-center text-center animate-in zoom-in duration-300">
                         <div class:list={["w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-2xl animate-bounce", isCorrect ? "bg-success" : "bg-error"]}>
@@ -226,7 +235,7 @@ const debugResult = result ? {
                         <a href="/play" class="btn btn-primary mt-4">Volver a unirse</a>
                     </div>
             ) : (
-                    <div id="question-area" class="space-y-4 sm:space-y-6 md:space-y-10">
+                    <div id="question-area" class="space-y-3 sm:space-y-6 md:space-y-10">
                         {submitError && (
                                 <div class="p-4 bg-red-500/20 border border-red-500/50 rounded-2xl text-red-400 text-sm font-bold">
                                     Error: {submitError}
