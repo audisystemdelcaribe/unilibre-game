@@ -10,6 +10,9 @@ export default defineConfig({
     // el adaptador se encarga de todo automáticamente.
     webAnalytics: { enabled: true } // Opcional: activa analíticas de Vercel
   }),
+  security: {
+    checkOrigin: false,
+  },
   integrations: [
     icon()
   ],
