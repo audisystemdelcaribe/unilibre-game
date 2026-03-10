@@ -1,0 +1,167 @@
+---
+import DashboardLayout from "@/layouts/DashboardLayout.astro";
+import { Icon } from 'astro-icon/components';
+import { actions } from "astro:actions";
+import FormButton from "@/components/FormButton.astro";
+
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+
+const { data: profile } = await Astro.locals.supabase
+    .from('players')
+    .select('id, name, program_id, semester')
+    .eq('auth_user_id', user.id)
+    .single();
+
+const { data: programs } = await Astro.locals.supabase
+    .from('programs')
+    .select('id, name')
+    .order('name', { ascending: true });
+
+const resultProfile = Astro.getActionResult(actions.updateMyProfile);
+const resultPassword = Astro.getActionResult(actions.changeMyPassword);
+const result = resultProfile || resultPassword;
+---
+
+<DashboardLayout title="Mi Cuenta" actionResult={result}>
+    <div class="mb-8">
+        <h1 class="text-4xl font-black italic tracking-tighter text-slate-900 uppercase">
+            Mi <span class="text-red-600">Cuenta</span>
+        </h1>
+        <p class="text-slate-500 font-medium mt-1">Actualiza tu información personal y contraseña.</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Sección 1: Editar perfil -->
+        <div class="bg-white rounded-[2rem] shadow-lg border border-slate-100 overflow-hidden">
+            <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-red-100 flex items-center justify-center">
+                        <Icon name="lucide:user-pen" class="w-5 h-5 text-red-600" />
+                    </div>
+                    <div>
+                        <h2 class="font-black text-slate-900 uppercase tracking-tight">Información personal</h2>
+                        <p class="text-xs text-slate-500">Nombre, programa y semestre</p>
+                    </div>
+                </div>
+            </div>
+            <form method="POST" action={actions.updateMyProfile} class="p-6 space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold text-slate-600">Nombre completo</span></label>
+                    <input
+                        name="full_name"
+                        type="text"
+                        required
+                        minlength="3"
+                        value={profile?.name ?? ''}
+                        class="input input-bordered w-full bg-slate-50 border-slate-200"
+                        placeholder="Ej: Pedro Pérez"
+                    />
+                </div>
+
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold text-slate-600">Correo (no modificable)</span></label>
+                    <input
+                        type="email"
+                        value={user?.email ?? ''}
+                        disabled
+                        readonly
+                        class="input input-bordered w-full bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed"
+                    />
+                    <p class="label-text-alt text-slate-400 mt-1">El correo institucional no se puede cambiar.</p>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-bold text-slate-600">Programa</span></label>
+                        <select name="program_id" required class="select select-bordered w-full bg-slate-50 border-slate-200">
+                            <option value="">Selecciona programa...</option>
+                            {programs?.map((p) => (
+                                <option value={p.id} selected={profile?.program_id != null && Number(profile.program_id) === Number(p.id)}>{p.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div class="form-control">
+                        <label class="label"><span class="label-text font-bold text-slate-600">Semestre</span></label>
+                        <input
+                            name="semester"
+                            type="number"
+                            min="1"
+                            max="12"
+                            required
+                            value={profile?.semester ?? ''}
+                            class="input input-bordered w-full bg-slate-50 border-slate-200"
+                            placeholder="1-12"
+                        />
+                    </div>
+                </div>
+
+                <div class="pt-2">
+                    <FormButton class="btn-primary btn w-full">
+                        <Icon name="lucide:save" class="w-4 h-4" />
+                        Guardar cambios
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+
+        <!-- Sección 2: Cambiar contraseña -->
+        <div class="bg-white rounded-[2rem] shadow-lg border border-slate-100 overflow-hidden">
+            <div class="p-6 border-b border-slate-100 bg-slate-50/50">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-violet-100 flex items-center justify-center">
+                        <Icon name="lucide:key-round" class="w-5 h-5 text-violet-600" />
+                    </div>
+                    <div>
+                        <h2 class="font-black text-slate-900 uppercase tracking-tight">Cambiar contraseña</h2>
+                        <p class="text-xs text-slate-500">Mínimo 6 caracteres</p>
+                    </div>
+                </div>
+            </div>
+            <form method="POST" action={actions.changeMyPassword} id="form-password" class="p-6 space-y-4">
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold text-slate-600">Nueva contraseña</span></label>
+                    <input
+                        name="new_password"
+                        type="password"
+                        required
+                        minlength="6"
+                        class="input input-bordered w-full bg-slate-50 border-slate-200"
+                        placeholder="••••••••"
+                        autocomplete="new-password"
+                    />
+                </div>
+                <div class="form-control">
+                    <label class="label"><span class="label-text font-bold text-slate-600">Confirmar nueva contraseña</span></label>
+                    <input
+                        name="confirm_password"
+                        type="password"
+                        required
+                        minlength="6"
+                        class="input input-bordered w-full bg-slate-50 border-slate-200"
+                        placeholder="••••••••"
+                        autocomplete="new-password"
+                    />
+                </div>
+                <div class="pt-2">
+                    <FormButton class="btn-secondary btn w-full">
+                        <Icon name="lucide:key" class="w-4 h-4" />
+                        Actualizar contraseña
+                    </FormButton>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script is:inline>
+        document.getElementById('form-password')?.addEventListener('submit', function(e) {
+            const np = this.querySelector('input[name="new_password"]');
+            const cp = this.querySelector('input[name="confirm_password"]');
+            if (np?.value !== cp?.value) {
+                e.preventDefault();
+                alert('Las contraseñas no coinciden');
+                return false;
+            }
+        });
+    </script>
+</DashboardLayout>

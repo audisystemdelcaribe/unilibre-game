@@ -3,7 +3,61 @@ import { z } from 'astro:schema';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { ensureAdmin } from '@/actions/utils';
 
+async function getOwnPlayer(context: any) {
+    const user = await context.locals.getUser();
+    if (!user) throw new Error("Debes iniciar sesión");
+    const { data: profile } = await context.locals.supabase
+        .from('players')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .single();
+    if (!profile?.id) throw new Error("Perfil no encontrado");
+    return { user, playerId: profile.id };
+}
+
 export const usersActions = {
+    updateMyProfile: defineAction({
+        accept: 'form',
+        input: z.object({
+            full_name: z.string().min(3, "Nombre debe tener al menos 3 caracteres"),
+            program_id: z.string(),
+            semester: z.string().refine((v) => !isNaN(parseInt(v)) && parseInt(v) >= 1 && parseInt(v) <= 12, "Semestre entre 1 y 12"),
+        }),
+        handler: async (input, context) => {
+            const { playerId } = await getOwnPlayer(context);
+            const { full_name, program_id, semester } = input;
+
+            const { error } = await supabaseAdmin
+                .from('players')
+                .update({ name: full_name, program_id: parseInt(program_id), semester: parseInt(semester) })
+                .eq('id', playerId);
+
+            if (error) throw new Error(error.message);
+            return { success: true, message: "Perfil actualizado correctamente" };
+        },
+    }),
+
+    changeMyPassword: defineAction({
+        accept: 'form',
+        input: z.object({
+            new_password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
+            confirm_password: z.string(),
+        }).refine((data) => data.new_password === data.confirm_password, {
+            message: "Las contraseñas no coinciden",
+            path: ["confirm_password"],
+        }),
+        handler: async (input, context) => {
+            const { user } = await getOwnPlayer(context);
+
+            const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+                password: input.new_password,
+            });
+
+            if (error) throw new Error(error.message);
+            return { success: true, message: "Contraseña actualizada correctamente" };
+        },
+    }),
+
     updateUserRole: defineAction({
         accept: 'form',
         input: z.object({
