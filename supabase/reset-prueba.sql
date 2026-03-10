@@ -1,5 +1,5 @@
 -- =============================================================================
--- RESET PARA PRUEBA DESDE CERO - Unilibre Game
+-- RESET PARA PRUEBA DESDE CERO - Unilibre Games
 -- =============================================================================
 -- Ejecutar en Supabase SQL Editor (Dashboard > SQL Editor)
 -- Borra todos los datos de eventos, rondas, sesiones y respuestas.

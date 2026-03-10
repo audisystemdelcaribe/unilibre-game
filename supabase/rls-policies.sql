@@ -1,5 +1,5 @@
 -- =============================================================================
--- POLÍTICAS RLS (Row Level Security) - Unilibre Game
+-- POLÍTICAS RLS (Row Level Security) - Unilibre Games
 -- =============================================================================
 -- Ejecutar en el SQL Editor de Supabase (Dashboard > SQL Editor)
 -- Nota: El cliente con SUPABASE_SECRET_KEY (service role) BYPASEA RLS.

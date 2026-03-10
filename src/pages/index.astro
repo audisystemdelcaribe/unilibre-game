@@ -32,13 +32,95 @@ if (Astro.request.method === "POST") {
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width" />
-	<title>Login - La Carrera del Saber</title>
+	<title>Login - Unilibre Games</title>
+	<style is:global>
+		@keyframes gradient-shift {
+			0%, 100% { background-position: 0% 50%; }
+			50% { background-position: 100% 50%; }
+		}
+		@keyframes float-1 {
+			0%, 100% { transform: translate(0, 0) scale(1); }
+			33% { transform: translate(30px, -20px) scale(1.05); }
+			66% { transform: translate(-20px, 20px) scale(0.95); }
+		}
+		@keyframes float-2 {
+			0%, 100% { transform: translate(0, 0) scale(1); }
+			33% { transform: translate(-40px, 15px) scale(1.08); }
+			66% { transform: translate(25px, -25px) scale(0.92); }
+		}
+		@keyframes float-3 {
+			0%, 100% { transform: translate(0, 0) scale(1); }
+			50% { transform: translate(-15px, -30px) scale(1.03); }
+		}
+		.login-bg {
+			position: fixed;
+			inset: 0;
+			z-index: -1;
+			overflow: hidden;
+		}
+		.login-bg-base {
+			position: absolute;
+			inset: 0;
+			background: linear-gradient(
+				135deg,
+				#0a0a0b 0%,
+				#18181b 25%,
+				#27272a 50%,
+				#18181b 75%,
+				#0a0a0b 100%
+			);
+			background-size: 400% 400%;
+			animation: gradient-shift 12s ease infinite;
+		}
+		.login-bg-orb {
+			position: absolute;
+			border-radius: 50%;
+			filter: blur(80px);
+			opacity: 0.4;
+			animation-duration: 18s;
+			animation-timing-function: ease-in-out;
+			animation-iteration-count: infinite;
+		}
+		.login-bg-orb-1 {
+			width: 320px;
+			height: 320px;
+			background: #004a99;
+			top: 10%;
+			left: 15%;
+			animation-name: float-1;
+		}
+		.login-bg-orb-2 {
+			width: 280px;
+			height: 280px;
+			background: #d9232e;
+			top: 55%;
+			right: 10%;
+			animation-name: float-2;
+			animation-delay: -6s;
+		}
+		.login-bg-orb-3 {
+			width: 200px;
+			height: 200px;
+			background: #1e3a5f;
+			bottom: 20%;
+			left: 25%;
+			animation-name: float-3;
+			animation-delay: -3s;
+			animation-duration: 14s;
+		}
+	</style>
 </head>
-<body class="bg-zinc-950 text-white flex min-h-screen items-center justify-center p-4">
-<div class="w-full max-w-sm">
+<body class="text-white flex min-h-screen items-center justify-center p-4 relative">
+	<div class="login-bg" aria-hidden="true">
+		<div class="login-bg-base"></div>
+		<div class="login-bg-orb login-bg-orb-1"></div>
+		<div class="login-bg-orb login-bg-orb-2"></div>
+		<div class="login-bg-orb login-bg-orb-3"></div>
+	</div>
+<div class="w-full max-w-sm relative z-10">
 	<div class="text-center mb-8">
 		<h1 class="text-5xl font-black italic tracking-tighter text-unilibre-blue">
-			UNILIBRE <span class="text-unilibre-red font-normal">GAME</span>
+			UNILIBRE <span class="text-unilibre-red font-normal">GAMES</span>
 		</h1>
 		<p class="text-zinc-500 text-sm mt-2 font-medium uppercase tracking-widest">La carrera del saber</p>
 	</div>
@@ -77,6 +159,10 @@ if (Astro.request.method === "POST") {
 		>
 			INICIAR SESIÓN
 		</button>
+
+		<p class="text-center text-zinc-500 text-sm mt-4">
+			¿No tienes cuenta? <a href="/registro" class="text-unilibre-blue font-bold hover:underline">Regístrate</a>
+		</p>
 	</form>
 </div>
 </body>
