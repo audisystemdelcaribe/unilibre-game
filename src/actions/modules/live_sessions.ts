@@ -175,6 +175,20 @@ export const liveSessionsActions = {
             await ensureStaff(context);
             const qId = parseInt(question_id);
             const rId = parseInt(round_id);
+
+            const { data: r } = await supabaseAdmin
+                .from('event_rounds')
+                .select('status, events(game_mode_id)')
+                .eq('id', rId)
+                .single();
+            if (!r) throw new Error("Ronda no encontrada");
+            if (r.status === 'fastest_finger' || r.status === 'finished') {
+                throw new Error("No se puede lanzar pregunta en esta ronda. Confirma al ganador de Mente más Rápida para continuar.");
+            }
+            if ((r.events as { game_mode_id?: number })?.game_mode_id === 3) {
+                throw new Error("En Mente más Rápida usa 'Confirmar ganador' para pasar a Silla Caliente.");
+            }
+
             try {
                 await supabaseAdmin.from('round_questions_shown').insert({ round_id: rId, question_id: qId });
             } catch (_) { /* tabla puede no existir */ }
@@ -339,9 +353,19 @@ export const liveSessionsActions = {
 
             if (!round) throw new Error("Ronda no encontrada");
 
+            const gameModeId = (round.events as { game_mode_id?: number })?.game_mode_id;
+            if (gameModeId === 3) {
+                throw new Error("En Mente más Rápida no se lanzan preguntas. Usa 'Confirmar ganador' para pasar a Silla Caliente.");
+            }
+            if (round.status === 'fastest_finger') {
+                throw new Error("La ronda está en Mente más Rápida. Confirma al ganador para continuar a Silla Caliente.");
+            }
+            if (round.status === 'finished') {
+                throw new Error("Esta ronda ya terminó. Abre la ronda de Silla Caliente para continuar.");
+            }
+
             // 1b. Silla Caliente: obtener semestre del concursante activo para filtrar preguntas
             let playerSemester: number | null = null;
-            const gameModeId = (round.events as { game_mode_id?: number })?.game_mode_id;
             if (gameModeId === 2) {
                 const { data: ac } = await supabaseAdmin
                     .from('active_contestants')
