@@ -37,6 +37,20 @@ const { data: inEvent } = await Astro.locals.supabase
 
 if (!inEvent) return Astro.redirect("/play?error=debes_unirte_con_pin");
 
+// Preselección: solo redirigir si ya terminó la partida (sesión finalizada), no mientras está respondiendo
+const isPreseleccion = round?.events?.game_mode_id === 1;
+if (isPreseleccion && player) {
+    const { data: finishedSession } = await supabaseAdmin
+        .from('game_sessions')
+        .select('id')
+        .eq('player_id', player.id)
+        .eq('event_id', round.event_id)
+        .eq('finished', true)
+        .limit(1)
+        .maybeSingle();
+    if (finishedSession) return Astro.redirect("/play?error=ya_participaste");
+}
+
 // Sesión obligatoria para enviar respuestas
 let { data: gameSession } = await Astro.locals.supabase
     .from('game_sessions')
@@ -151,10 +165,10 @@ const debugResult = result ? {
         </script>
     )}
 
-    <div class="flex flex-col h-screen p-4 bg-zinc-950 text-white overflow-hidden font-sans">
+    <div class="flex flex-col min-h-screen h-screen max-h-[100dvh] p-3 sm:p-4 bg-zinc-950 text-white overflow-hidden font-sans">
 
         <!-- HEADER -->
-        <header class="flex justify-between items-center bg-zinc-900 border border-zinc-800 p-4 rounded-[2rem] mb-6 shadow-2xl">
+        <header class="flex justify-between items-center bg-zinc-900 border border-zinc-800 p-3 sm:p-4 rounded-2xl sm:rounded-[2rem] mb-3 sm:mb-6 shadow-xl flex-shrink-0">
             <div class="flex items-center gap-4">
                 <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-black text-white italic">
                     {player?.name?.charAt(0).toUpperCase()}
@@ -175,7 +189,7 @@ const debugResult = result ? {
             )}
         </header>
 
-        <main class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-8">
+        <main class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-4 sm:gap-6 md:gap-8 min-h-0 overflow-y-auto overflow-x-hidden py-2">
             {hasResponded ? (
                     <div class="flex flex-col items-center justify-center text-center animate-in zoom-in duration-300">
                         <div class:list={["w-32 h-32 rounded-full flex items-center justify-center mb-8 shadow-2xl animate-bounce", isCorrect ? "bg-success" : "bg-error"]}>
@@ -203,19 +217,19 @@ const debugResult = result ? {
                         <a href="/play" class="btn btn-primary mt-4">Volver a unirse</a>
                     </div>
             ) : (
-                    <div id="question-area" class="space-y-10">
+                    <div id="question-area" class="space-y-4 sm:space-y-6 md:space-y-10">
                         {submitError && (
                                 <div class="p-4 bg-red-500/20 border border-red-500/50 rounded-2xl text-red-400 text-sm font-bold">
                                     Error: {submitError}
                                 </div>
                         )}
-                        <div class="text-center">
-                            <h2 class="text-3xl md:text-5xl font-black leading-tight italic uppercase text-white drop-shadow-2xl">
+                        <div class="text-center px-1">
+                            <h2 class="text-xl min-[400px]:text-2xl sm:text-3xl md:text-5xl font-black leading-tight italic uppercase text-white drop-shadow-2xl break-words">
                                 {round?.questions?.question_text}
                             </h2>
                         </div>
 
-                        <form id="game-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <form id="game-form" class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                             <input type="hidden" name="round_id" value={round_id} />
                             <input type="hidden" name="question_id" value={round?.current_question_id} />
                             <input type="hidden" name="session_id" value={gameSession?.id} />
@@ -224,13 +238,13 @@ const debugResult = result ? {
                                     <button
                                             type="button"
                                             data-answer-id={ans.id}
-                                            class="option-btn group relative h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-[2rem] text-left overflow-hidden hover:border-primary transition-all active:scale-95 shadow-xl"
+                                            class="option-btn group relative min-h-[3.5rem] sm:h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-xl sm:rounded-2xl text-left overflow-hidden hover:border-primary transition-all active:scale-[0.98] shadow-lg touch-manipulation"
                                     >
-                                        <div class="flex items-center gap-5 px-8 relative z-10">
-                                    <span class="w-12 h-12 rounded-2xl bg-zinc-800 group-hover:bg-primary flex items-center justify-center font-black text-2xl border border-zinc-700">
+                                        <div class="flex items-center gap-3 sm:gap-5 px-4 sm:px-6 md:px-8 py-3 relative z-10">
+                                    <span class="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-zinc-800 group-hover:bg-primary flex items-center justify-center font-black text-xl sm:text-2xl border border-zinc-700 flex-shrink-0">
                                         {['A','B','C','D'][idx]}
                                     </span>
-                                            <span class="font-bold text-lg md:text-xl text-zinc-200">{ans.answer_text}</span>
+                                            <span class="font-bold text-base sm:text-lg md:text-xl text-zinc-200 line-clamp-2 text-left">{ans.answer_text}</span>
                                         </div>
                                         <div class="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                     </button>
@@ -277,8 +291,8 @@ const debugResult = result ? {
             </footer>
         )}
         {!isJuegoFinal && (
-            <footer class="mt-8 pb-10">
-                <progress id="timer-bar" class="progress progress-primary w-full h-4 bg-zinc-800 shadow-inner" value="100" max="100"></progress>
+            <footer class="mt-4 sm:mt-8 pb-6 sm:pb-10 flex-shrink-0" style="padding-bottom: max(1.5rem, env(safe-area-inset-bottom));">
+                <progress id="timer-bar" class="progress progress-primary w-full h-3 sm:h-4 bg-zinc-800 shadow-inner" value="100" max="100"></progress>
             </footer>
         )}
     </div>

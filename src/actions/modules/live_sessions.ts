@@ -116,6 +116,21 @@ export const liveSessionsActions = {
                 }
             }
 
+            // 2d. Preselección (game_mode 1): si ya terminó de participar (sesión finalizada), no puede volver a entrar
+            if (gameModeId === 1) {
+                const { data: finishedSession } = await supabaseAdmin
+                    .from('game_sessions')
+                    .select('id')
+                    .eq('player_id', player.id)
+                    .eq('event_id', round.event_id)
+                    .eq('finished', true)
+                    .limit(1)
+                    .maybeSingle();
+                if (finishedSession) {
+                    throw new Error("Ya participaste en esta preselección. No puedes volver a entrar.");
+                }
+            }
+
             // 3. UPSERT DE SESIÓN (Ahora funcionará gracias al SQL de arriba)
             const { data: session, error: sErr } = await supabaseAdmin
                 .from('game_sessions')

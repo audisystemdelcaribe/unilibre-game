@@ -13,6 +13,7 @@ const errorMessages: Record<string, string> = {
     ronda_no_encontrada: "Ronda no encontrada.",
     sesion_invalida: "Sesión inválida.",
     fin_participacion: "Fin de tu participación. No puedes volver a entrar a la sala.",
+    ya_participaste: "Ya participaste en esta preselección. No puedes volver a entrar.",
 };
 
 // Capturamos el resultado de la acción
@@ -30,27 +31,28 @@ if (result?.data?.success) {
 <html lang="es">
 <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Unirse al Juego | Unilibre Game</title>
 </head>
-<body class="bg-zinc-950 text-white min-h-screen flex flex-col items-center justify-center p-4">
+<body class="bg-zinc-950 text-white min-h-screen flex flex-col items-center justify-center p-4 sm:p-6" style="padding-left: max(1rem, env(safe-area-inset-left)); padding-right: max(1rem, env(safe-area-inset-right)); padding-bottom: env(safe-area-inset-bottom);">
 
-<div class="w-full max-w-md text-center">
-    <h1 class="text-6xl font-black italic tracking-tighter mb-10">¡PREPÁRATE!</h1>
+<div class="w-full max-w-md text-center px-2">
+    <h1 class="text-4xl sm:text-5xl md:text-6xl font-black italic tracking-tighter mb-6 sm:mb-10">¡PREPÁRATE!</h1>
 
-    <div class="bg-zinc-900 border border-zinc-800 p-10 rounded-[2.5rem] shadow-2xl">
-        <p class="text-zinc-400 font-bold uppercase text-xs mb-6">PIN DE ACCESO</p>
+    <div class="bg-zinc-900 border border-zinc-800 p-6 sm:p-8 md:p-10 rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl min-h-[280px] flex flex-col justify-center">
+        <p class="text-zinc-400 font-bold uppercase text-xs mb-4 sm:mb-6">PIN DE ACCESO</p>
 
-        <form method="POST" action={actions.joinRoom} class="space-y-8">
+        <form method="POST" action={actions.joinRoom} class="space-y-6 sm:space-y-8">
             <input
                     name="pin"
                     type="text"
                     inputmode="numeric"
                     placeholder="0000"
-                    class="input input-bordered w-full text-center text-5xl font-black tracking-[0.4em] h-28 bg-zinc-800 border-zinc-700 text-primary outline-none"
+                    class="input input-bordered w-full text-center text-4xl min-[400px]:text-5xl font-black tracking-[0.3em] sm:tracking-[0.4em] min-h-[4.5rem] sm:min-h-[7rem] bg-zinc-800 border-zinc-700 text-primary outline-none text-lg rounded-2xl touch-manipulation"
                     required
             />
 
-            <FormButton class="btn-primary btn-lg w-full text-white font-black italic uppercase tracking-widest shadow-xl">
+            <FormButton class="btn-primary btn-lg w-full text-white font-black italic uppercase tracking-widest shadow-xl min-h-[3.5rem] text-base sm:text-lg touch-manipulation">
                 ¡ENTRAR AHORA!
             </FormButton>
         </form>
