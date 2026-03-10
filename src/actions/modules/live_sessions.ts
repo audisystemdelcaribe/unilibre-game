@@ -116,35 +116,41 @@ export const liveSessionsActions = {
                 }
             }
 
-            // 2d. Preselección (game_mode 1): si ya terminó de participar (sesión finalizada), no puede volver a entrar
-            if (gameModeId === 1) {
-                const { data: finishedSession } = await supabaseAdmin
-                    .from('game_sessions')
-                    .select('id')
-                    .eq('player_id', player.id)
-                    .eq('event_id', round.event_id)
-                    .eq('finished', true)
-                    .limit(1)
-                    .maybeSingle();
-                if (finishedSession) {
-                    throw new Error("Ya participaste en esta preselección. No puedes volver a entrar.");
-                }
-            }
+            // Preselección: no bloquear por sesión finalizada; el estudiante sigue hasta que el docente termine la ronda o no haya más preguntas.
 
-            // 3. UPSERT DE SESIÓN (Ahora funcionará gracias al SQL de arriba)
-            const { data: session, error: sErr } = await supabaseAdmin
+            // 3. UPSERT DE SESIÓN. En preselección, si falla por duplicado (sesión con finished=true), reactivamos esa sesión.
+            let session: { id: string } | null = null;
+            const payload = {
+                player_id: player.id,
+                event_id: round.event_id,
+                round_id: round.id,
+                session_type: 'classroom' as const,
+                finished: false
+            };
+            const { data: upserted, error: sErr } = await supabaseAdmin
                 .from('game_sessions')
-                .upsert({
-                    player_id: player.id,
-                    event_id: round.event_id,
-                    round_id: round.id,
-                    session_type: 'classroom',
-                    finished: false // Vital para que coincida con el constraint
-                }, { onConflict: 'player_id, event_id, finished' })
+                .upsert(payload, { onConflict: 'player_id, event_id, finished' })
                 .select()
                 .single();
 
-            if (sErr) throw new Error("Error al crear sesión: " + sErr.message);
+            if (sErr) {
+                const isConflict = /duplicate key|unique|unique_session/i.test(sErr.message);
+                if (gameModeId === 1 && isConflict) {
+                    const { data: updated, error: upErr } = await supabaseAdmin
+                        .from('game_sessions')
+                        .update({ finished: false, round_id: round.id, session_type: 'classroom' })
+                        .eq('player_id', player.id)
+                        .eq('event_id', round.event_id)
+                        .select()
+                        .single();
+                    if (upErr) throw new Error("Error al crear sesión: " + sErr.message);
+                    session = updated;
+                } else {
+                    throw new Error("Error al crear sesión: " + sErr.message);
+                }
+            } else {
+                session = upserted;
+            }
 
             // 4. REGISTRAR EN EL EVENTO (Asegurando el grupo)
             await supabaseAdmin
@@ -466,8 +472,9 @@ export const liveSessionsActions = {
             const { data: correctAns } = await supabaseAdmin.from('answers').select('id').eq('question_id', round.current_question_id).eq('is_correct', true).limit(1).maybeSingle();
             const correctAnswerId = correctAns?.id ?? sel.answer_id;
             const verificationResult = { question_id: round.current_question_id, is_correct: correct, correct_answer_id: correctAnswerId, student_answer_id: sel.answer_id } as const;
-            const { data: roundFull } = await supabaseAdmin.from('event_rounds').select('*, events(program_id, season_id)').eq('id', rId).single();
+            const { data: roundFull } = await supabaseAdmin.from('event_rounds').select('*, events(program_id, season_id, game_mode_id)').eq('id', rId).single();
             if (!roundFull) throw new Error("Ronda no encontrada");
+            const isPreseleccion = (roundFull.events as { game_mode_id?: number })?.game_mode_id === 1;
 
             const { data: question } = await supabaseAdmin.from('questions').select('level_id').eq('id', round.current_question_id).single();
             const { data: level } = await supabaseAdmin.from('game_levels').select('id, money_value, points, difficulty_order').eq('id', question?.level_id || 1).single();
@@ -531,17 +538,25 @@ export const liveSessionsActions = {
                 await supabaseAdmin.from('event_rounds').update({ current_question_id: chosenId, question_started_at: new Date().toISOString(), verification_result: verificationResult }).eq('id', rId);
                 return { success: true, message: "¡Correcto! Siguiente nivel." };
             } else {
-                // Premio solo si llegó a un seguro: niveles que PASÓ correctamente (antes del que falló)
+                // Respuesta incorrecta
+                await supabaseAdmin.rpc('insert_game_answer', { p_game_session_id: gameSession.id, p_round_id: rId, p_event_id: roundFull.event_id, p_player_id: sel.player_id, p_classroom_group_id: roundFull.classroom_group_id ?? '', p_question_id: round.current_question_id, p_answer_id: sel.answer_id, p_is_correct: false, p_response_time_ms: 0, p_money_at_question: 0, p_level_id: question?.level_id || 1 });
+                await supabaseAdmin.from('student_answer_selection').delete().eq('round_id', rId).eq('question_id', round.current_question_id);
+
+                if (isPreseleccion) {
+                    // Preselección: no sacar al estudiante; no marcar sesión ni ronda como terminadas
+                    await supabaseAdmin.from('event_rounds').update({ verification_result: verificationResult }).eq('id', rId);
+                    return { success: true, message: "Incorrecto. Sigue participando.", finished: false };
+                }
+
+                // Clásico (Silla Caliente): premio por seguros y terminar sesión
                 const { data: allLevels } = await supabaseAdmin.from('game_levels').select('id, difficulty_order, money_value, is_safe_level').order('difficulty_order', { ascending: true });
                 const currentOrder = allLevels?.find((l: any) => l.id === question?.level_id)?.difficulty_order ?? 1;
                 const levelsPassed = (allLevels || []).filter((l: any) => l.difficulty_order < currentOrder);
                 const safeLevelsPassed = levelsPassed.filter((l: any) => l.is_safe_level);
                 let prizeMoney = 0;
                 if (safeLevelsPassed.length > 0) prizeMoney = safeLevelsPassed[safeLevelsPassed.length - 1].money_value || 0;
-                await supabaseAdmin.rpc('insert_game_answer', { p_game_session_id: gameSession.id, p_round_id: rId, p_event_id: roundFull.event_id, p_player_id: sel.player_id, p_classroom_group_id: roundFull.classroom_group_id ?? '', p_question_id: round.current_question_id, p_answer_id: sel.answer_id, p_is_correct: false, p_response_time_ms: 0, p_money_at_question: 0, p_level_id: question?.level_id || 1 });
                 await supabaseAdmin.from('game_sessions').update({ score: prizeMoney, finished: true }).eq('id', gameSession.id);
                 await supabaseAdmin.from('event_players').update({ score: prizeMoney, stage: 'finished' }).eq('event_id', roundFull.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '');
-                await supabaseAdmin.from('student_answer_selection').delete().eq('round_id', rId).eq('question_id', round.current_question_id);
                 const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id').eq('event_id', roundFull.event_id).eq('classroom_group_id', roundFull.classroom_group_id ?? '').order('score', { ascending: false }).order('total_time_ms', { ascending: true }).order('player_id', { ascending: true });
                 if (ranked?.length) { for (let i = 0; i < ranked.length; i++) { await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 }).eq('event_id', roundFull.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', roundFull.classroom_group_id ?? ''); } }
                 const seasonId = (roundFull.events as { season_id?: number })?.season_id;
@@ -568,11 +583,12 @@ export const liveSessionsActions = {
 
             const { data: round } = await supabaseAdmin
                 .from('event_rounds')
-                .select('*, events(program_id, season_id)')
+                .select('*, events(program_id, season_id, game_mode_id)')
                 .eq('id', rId)
                 .single();
 
             if (!round || !round.current_question_id) throw new Error("Ronda o pregunta no encontrada");
+            const isPreseleccionEval = (round.events as { game_mode_id?: number })?.game_mode_id === 1;
 
             const { data: sel } = await supabaseAdmin
                 .from('student_answer_selection')
@@ -719,7 +735,28 @@ export const liveSessionsActions = {
 
                 return { success: true, message: "¡Correcto! Siguiente nivel." };
             } else {
-                // Incorrecto: premio solo si llegó a un seguro (niveles que PASÓ correctamente)
+                // Respuesta incorrecta
+                await supabaseAdmin.rpc('insert_game_answer', {
+                    p_game_session_id: gameSession.id,
+                    p_round_id: rId,
+                    p_event_id: round.event_id,
+                    p_player_id: sel.player_id,
+                    p_classroom_group_id: round.classroom_group_id ?? '',
+                    p_question_id: round.current_question_id,
+                    p_answer_id: sel.answer_id,
+                    p_is_correct: false,
+                    p_response_time_ms: 0,
+                    p_money_at_question: 0,
+                    p_level_id: question?.level_id || 1,
+                });
+                await supabaseAdmin.from('student_answer_selection').delete().eq('round_id', rId).eq('question_id', round.current_question_id);
+
+                if (isPreseleccionEval) {
+                    // Preselección: no sacar al estudiante; no marcar sesión ni ronda como terminadas
+                    return { success: true, message: "Incorrecto. Sigue participando.", finished: false };
+                }
+
+                // Clásico: premio por seguros y terminar sesión
                 const { data: allLevels } = await supabaseAdmin
                     .from('game_levels')
                     .select('id, difficulty_order, money_value, is_safe_level')
@@ -735,43 +772,23 @@ export const liveSessionsActions = {
                     prizeMoney = lastSafe.money_value || 0;
                 }
 
-                await supabaseAdmin.rpc('insert_game_answer', {
-                    p_game_session_id: gameSession.id,
-                    p_round_id: rId,
-                    p_event_id: round.event_id,
-                    p_player_id: sel.player_id,
-                    p_classroom_group_id: round.classroom_group_id ?? '',
-                    p_question_id: round.current_question_id,
-                    p_answer_id: sel.answer_id,
-                    p_is_correct: false,
-                    p_response_time_ms: 0,
-                    p_money_at_question: 0,
-                    p_level_id: question?.level_id || 1,
-                });
-
                 await supabaseAdmin.from('game_sessions').update({ score: prizeMoney, finished: true }).eq('id', gameSession.id);
                 await supabaseAdmin.from('event_players').update({ score: prizeMoney, stage: 'finished' }).eq('event_id', round.event_id).eq('player_id', sel.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
-                await supabaseAdmin.from('student_answer_selection').delete().eq('round_id', rId).eq('question_id', round.current_question_id);
-
                 const { data: ranked } = await supabaseAdmin.from('event_players').select('player_id')
                     .eq('event_id', round.event_id).eq('classroom_group_id', round.classroom_group_id ?? '')
                     .order('score', { ascending: false }).order('total_time_ms', { ascending: true }).order('player_id', { ascending: true });
-
                 if (ranked?.length) {
                     for (let i = 0; i < ranked.length; i++) {
                         await supabaseAdmin.from('event_players').update({ final_rank: i + 1, is_finalist: i === 0 })
                             .eq('event_id', round.event_id).eq('player_id', ranked[i].player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
                     }
                 }
-
                 const seasonId = (round.events as { season_id?: number })?.season_id;
                 if (seasonId) {
                     const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', prizeMoney);
                     await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: sel.player_id, score: prizeMoney, position: (count ?? 0) + 1 });
                 }
-
                 await supabaseAdmin.from('event_rounds').update({ status: 'finished' }).eq('id', rId);
-
                 return { success: true, message: `Incorrecto. Premio: $${prizeMoney.toLocaleString('es-CO')}`, finished: true };
             }
         }

@@ -19,6 +19,8 @@ const { data: round } = await Astro.locals.supabase
 const isJuegoFinal = round?.events?.game_mode_id === 2;
 
 if (!round) return Astro.redirect("/play?error=ronda_no_encontrada");
+// Preselección: el estudiante solo sale cuando el docente termina o no hay más preguntas de nivel 1 (ronda finished)
+if (round.status === 'finished') return Astro.redirect(`/play/results/${round_id}`);
 if (round.status !== 'active') return Astro.redirect(`/play/waiting/${round_id}`);
 
 // 2. Obtener Perfil e Identificar Sesión
@@ -37,19 +39,8 @@ const { data: inEvent } = await Astro.locals.supabase
 
 if (!inEvent) return Astro.redirect("/play?error=debes_unirte_con_pin");
 
-// Preselección: solo redirigir si ya terminó la partida (sesión finalizada), no mientras está respondiendo
+// Preselección: el estudiante solo sale cuando la ronda está finished (docente terminó). No bloquear por sesión finalizada.
 const isPreseleccion = round?.events?.game_mode_id === 1;
-if (isPreseleccion && player) {
-    const { data: finishedSession } = await supabaseAdmin
-        .from('game_sessions')
-        .select('id')
-        .eq('player_id', player.id)
-        .eq('event_id', round.event_id)
-        .eq('finished', true)
-        .limit(1)
-        .maybeSingle();
-    if (finishedSession) return Astro.redirect("/play?error=ya_participaste");
-}
 
 // Sesión obligatoria para enviar respuestas
 let { data: gameSession } = await Astro.locals.supabase
