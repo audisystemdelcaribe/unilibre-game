@@ -1,16 +1,17 @@
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
-import vercel from '@astrojs/vercel';
+import node from '@astrojs/node';
 import icon from 'astro-icon';
-// import node from '@astrojs/node';
 
 export default defineConfig({
-    output: 'server',
-    adapter: vercel(),
-    integrations: [
-        icon()
-    ],
-    vite: {
-        plugins: [tailwindcss()],
-    },
+  output: 'server',
+  adapter: node({
+    mode: 'standalone'
+  }),
+  integrations: [
+    icon()
+  ],
+  vite: {
+    plugins: [tailwindcss()],
+  },
 });
