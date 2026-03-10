@@ -1,12 +1,14 @@
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
-import node from '@astrojs/node';
+import vercel from '@astrojs/vercel'; // Cambiamos 'node' por 'vercel'
 import icon from 'astro-icon';
 
 export default defineConfig({
-  output: 'server',
-  adapter: node({
-    mode: 'standalone'
+  output: 'server', // Mantenemos SSR
+  adapter: vercel({
+    // Vercel no necesita el "mode: standalone", 
+    // el adaptador se encarga de todo automáticamente.
+    webAnalytics: { enabled: true } // Opcional: activa analíticas de Vercel
   }),
   integrations: [
     icon()
