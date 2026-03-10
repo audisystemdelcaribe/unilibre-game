@@ -118,6 +118,27 @@ export const POST: APIRoute = async ({ request, locals }) => {
         });
     }
 
+    // Idempotencia: si ya respondió esta pregunta, retornar éxito sin volver a insertar
+    const { data: existingAnswer } = await supabaseAdmin
+        .from("game_answers")
+        .select("id, is_correct, money_at_question")
+        .eq("game_session_id", sessionIdNum)
+        .eq("question_id", qId)
+        .maybeSingle();
+
+    if (existingAnswer) {
+        return new Response(
+            JSON.stringify({
+                success: true,
+                correct: existingAnswer.is_correct ?? false,
+                points: existingAnswer.money_at_question ?? 0,
+                time: (responseMs / 1000).toFixed(2),
+                insertId: existingAnswer.id,
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+        );
+    }
+
     const isJuegoFinal = (roundRes.data.events as { game_mode_id?: number })?.game_mode_id === 2;
     let points = 0;
     if (isCorrect) {
