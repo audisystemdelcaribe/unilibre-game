@@ -111,49 +111,39 @@ const debugResult = result ? {
 
 <PlayLayout title="¡Carrera en Vivo!">
     <style>
+        /* Parpadeo: quitar transition para que la animación se vea (transition-all del botón lo ocultaba) */
         .option-btn.flash-green,
         .option-btn.flash-red,
         .option-btn.flash-correct {
             animation-fill-mode: both;
+            transition: none !important;
         }
+        /* Parpadeo: verde=acierto, rojo=tu respuesta errónea, amarillo=respuesta correcta (Preselección y Juego final) */
         @keyframes flash-green-black {
-            0%, 100% {
-                background: rgb(34 197 94) !important;
-                border-color: rgb(34 197 94) !important;
-            }
-            50% {
-                background: rgb(24 24 27) !important;
-                border-color: rgb(63 63 70) !important;
-            }
+            0%, 35%, 65%, 100% { background-color: #22c55e !important; border-color: #22c55e !important; }
+            50% { background-color: #18181b !important; border-color: #3f3f46 !important; }
         }
         @keyframes flash-red-black {
-            0%, 100% {
-                background: rgb(239 68 68) !important;
-                border-color: rgb(239 68 68) !important;
-            }
-            50% {
-                background: rgb(24 24 27) !important;
-                border-color: rgb(63 63 70) !important;
-            }
+            0%, 35%, 65%, 100% { background-color: #ef4444 !important; border-color: #ef4444 !important; }
+            50% { background-color: #18181b !important; border-color: #3f3f46 !important; }
         }
-        @keyframes flash-correct-green {
-            0%, 100% {
-                background: rgb(34 197 94) !important;
-                border-color: rgb(34 197 94) !important;
-            }
-            50% {
-                background: rgb(22 163 74) !important;
-                border-color: rgb(34 197 94) !important;
-            }
+        @keyframes flash-correct-yellow {
+            0%, 35%, 65%, 100% { background-color: #eab308 !important; border-color: #eab308 !important; }
+            50% { background-color: #18181b !important; border-color: #3f3f46 !important; }
         }
         .option-btn.flash-green {
-            animation: flash-green-black 0.45s ease-in-out 6;
+            animation: flash-green-black 0.7s ease-in-out 5;
         }
         .option-btn.flash-red {
-            animation: flash-red-black 0.45s ease-in-out 6;
+            animation: flash-red-black 0.7s ease-in-out 5;
         }
         .option-btn.flash-correct {
-            animation: flash-correct-green 0.45s ease-in-out 6;
+            animation: flash-correct-yellow 0.7s ease-in-out 5;
+        }
+        /* Juego final: borde azul en todos los lados (el ring se cortaba por overflow-hidden) */
+        .option-btn.option-btn-selected {
+            border-width: 3px !important;
+            border-color: var(--color-primary) !important;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
@@ -168,14 +158,14 @@ const debugResult = result ? {
     <div class="flex flex-col min-h-screen h-screen max-h-[100dvh] p-3 sm:p-4 bg-zinc-950 text-white overflow-hidden font-sans">
 
         <!-- HEADER -->
-        <header class="flex justify-between items-center bg-zinc-900 border border-zinc-800 p-3 sm:p-4 rounded-2xl sm:rounded-[2rem] mb-3 sm:mb-6 shadow-xl flex-shrink-0">
-            <div class="flex items-center gap-4">
-                <div class="w-10 h-10 bg-primary rounded-xl flex items-center justify-center font-black text-white italic">
+        <header class="flex justify-between items-center gap-2 bg-zinc-900 border border-zinc-800 p-3 sm:p-4 rounded-2xl sm:rounded-[2rem] mb-3 sm:mb-6 shadow-xl flex-shrink-0 flex-wrap sm:flex-nowrap">
+            <div class="flex items-center gap-3 sm:gap-4 min-w-0">
+                <div class="w-10 h-10 flex-shrink-0 bg-primary rounded-xl flex items-center justify-center font-black text-white italic">
                     {player?.name?.charAt(0).toUpperCase()}
                 </div>
-                <div>
+                <div class="min-w-0">
                     {isJuegoFinal && player?.name ? (
-                        <p class="text-xl md:text-2xl font-black text-white leading-tight">{player.name}</p>
+                        <p class="text-lg sm:text-xl md:text-2xl font-black text-white leading-tight truncate">{player.name}</p>
                     ) : (
                         <>
                             <p class="text-[8px] font-black text-zinc-500 uppercase tracking-widest leading-none mb-1">Puntos</p>
@@ -184,9 +174,37 @@ const debugResult = result ? {
                     )}
                 </div>
             </div>
-            {!isJuegoFinal && (
-                <div id="timer-display" class="text-4xl font-black italic text-white tabular-nums">00</div>
-            )}
+            <div class="flex items-center gap-2 flex-shrink-0">
+                {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
+                    <div id="lifelines-bar" class="flex gap-1.5 flex-wrap justify-end">
+                        {lifelines.map((l) => {
+                            const code = (l.code || '').toLowerCase();
+                            const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
+                            const isCambiar = code === 'cambiar' || code === 'saltar' || (l.name || '').toLowerCase().includes('cambiar');
+                            const isPublico = code === 'publico' || (l.name || '').toLowerCase().includes('público') || (l.name || '').toLowerCase().includes('publico');
+                            const isLlamada = code === 'llamada' || (l.name || '').toLowerCase().includes('llamada');
+                            const lifelineCode = is5050 ? '5050' : isCambiar ? 'cambiar' : isPublico ? 'publico' : isLlamada ? 'llamada' : code;
+                            const isUsed = usedLifelinesInRound.includes(lifelineCode);
+                            return (
+                                <span
+                                    class:list={[
+                                        'lifeline-badge px-2 py-1 rounded-lg text-[10px] sm:text-xs font-semibold border',
+                                        isUsed ? 'bg-zinc-800/50 border-zinc-600 text-zinc-500 opacity-60 line-through' : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
+                                    ]}
+                                    data-code={l.code || ''}
+                                    data-name={l.name}
+                                    title={l.name}
+                                >
+                                    {l.name}{isUsed ? ' ✓' : ''}
+                                </span>
+                            );
+                        })}
+                    </div>
+                )}
+                {!isJuegoFinal && (
+                    <div id="timer-display" class="text-3xl sm:text-4xl font-black italic text-white tabular-nums">00</div>
+                )}
+            </div>
         </header>
 
         <main class="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full gap-4 sm:gap-6 md:gap-8 min-h-0 overflow-y-auto overflow-x-hidden py-2">
@@ -238,6 +256,7 @@ const debugResult = result ? {
                                     <button
                                             type="button"
                                             data-answer-id={ans.id}
+                                            data-is-correct={ans.is_correct === true ? 'true' : 'false'}
                                             class="option-btn group relative min-h-[3.5rem] sm:h-24 md:h-32 bg-zinc-900 border-2 border-zinc-800 rounded-xl sm:rounded-2xl text-left overflow-hidden hover:border-primary transition-all active:scale-[0.98] shadow-lg touch-manipulation"
                                     >
                                         <div class="flex items-center gap-3 sm:gap-5 px-4 sm:px-6 md:px-8 py-3 relative z-10">
@@ -262,34 +281,6 @@ const debugResult = result ? {
             )}
         </main>
 
-        {isJuegoFinal && lifelines && lifelines.length > 0 && !hasResponded && (
-            <footer class="mt-6 pb-8 pt-4 border-t border-zinc-800">
-                <p class="text-[10px] text-zinc-500 uppercase font-black mb-3 text-center">Comodines</p>
-                <div id="lifelines-bar" class="flex gap-3 flex-wrap justify-center">
-                    {lifelines.map((l) => {
-                        const code = (l.code || '').toLowerCase();
-                        const is5050 = code === '5050' || code.includes('50') || (l.name || '').toLowerCase().includes('50');
-                        const isCambiar = code === 'cambiar' || code === 'saltar' || (l.name || '').toLowerCase().includes('cambiar');
-                        const isPublico = code === 'publico' || (l.name || '').toLowerCase().includes('público') || (l.name || '').toLowerCase().includes('publico');
-                        const isLlamada = code === 'llamada' || (l.name || '').toLowerCase().includes('llamada');
-                        const lifelineCode = is5050 ? '5050' : isCambiar ? 'cambiar' : isPublico ? 'publico' : isLlamada ? 'llamada' : code;
-                        const isUsed = usedLifelinesInRound.includes(lifelineCode);
-                        return (
-                            <span
-                                class:list={[
-                                    'lifeline-badge px-5 py-2.5 rounded-2xl text-base font-black border-2',
-                                    isUsed ? 'bg-zinc-800/50 border-zinc-600 text-zinc-500 opacity-60 line-through' : 'bg-amber-500/20 border-amber-500/50 text-amber-400'
-                                ]}
-                                data-code={l.code || ''}
-                                data-name={l.name}
-                            >
-                                {l.name}{isUsed ? ' (usado)' : ''}
-                            </span>
-                        );
-                    })}
-                </div>
-            </footer>
-        )}
         {!isJuegoFinal && (
             <footer class="mt-4 sm:mt-8 pb-6 sm:pb-10 flex-shrink-0" style="padding-bottom: max(1.5rem, env(safe-area-inset-bottom));">
                 <progress id="timer-bar" class="progress progress-primary w-full h-3 sm:h-4 bg-zinc-800 shadow-inner" value="100" max="100"></progress>
@@ -351,8 +342,8 @@ const debugResult = result ? {
                     form.querySelectorAll('.option-btn').forEach((b) => {
                         b.style.pointerEvents = 'none';
                         b.disabled = true;
-                        if (b.classList.contains('ring-4') || b.classList.contains('ring-primary')) {
-                            b.classList.add('!bg-amber-500/40', 'border-amber-400');
+                        if (b.classList.contains('option-btn-selected')) {
+                            b.classList.add('!bg-amber-500/40', '!border-amber-400');
                         }
                     });
                 }
@@ -404,25 +395,35 @@ const debugResult = result ? {
                 const isCorrect = vr.is_correct;
                 const studentAnswerId = String(vr.student_answer_id);
                 const correctAnswerId = String(vr.correct_answer_id);
-                form?.querySelectorAll('.option-btn').forEach((b) => {
-                    const aid = b.getAttribute('data-answer-id');
-                    b.classList.remove('!bg-amber-500/40', 'border-amber-400', 'bg-zinc-900', 'border-zinc-800');
-                    b.style.backgroundColor = '';
-                    b.style.borderColor = '';
-                    if (aid === studentAnswerId) {
-                        b.classList.add(isCorrect ? 'flash-green' : 'flash-red');
-                    } else if (aid === correctAnswerId && !isCorrect) {
-                        b.classList.add('flash-correct');
-                    }
-                });
+                const blinkColors = { green: '#22c55e', red: '#ef4444', yellow: '#eab308' };
+                const dark = '#18181b';
+                let tick = 0;
+                const blink = setInterval(() => {
+                    const on = tick % 2 === 0;
+                    form?.querySelectorAll('.option-btn').forEach((b) => {
+                        const aid = b.getAttribute('data-answer-id');
+                        b.classList.remove('!bg-amber-500/40', 'border-amber-400');
+                        b.style.transition = 'none';
+                        if (aid === studentAnswerId) {
+                            b.style.backgroundColor = on ? (isCorrect ? blinkColors.green : blinkColors.red) : dark;
+                            b.style.borderColor = on ? (isCorrect ? blinkColors.green : blinkColors.red) : '#3f3f46';
+                        } else if (aid === correctAnswerId && !isCorrect) {
+                            b.style.backgroundColor = on ? blinkColors.yellow : dark;
+                            b.style.borderColor = on ? blinkColors.yellow : '#3f3f46';
+                        }
+                    });
+                    tick++;
+                    if (tick >= 6) clearInterval(blink);
+                }, 450);
                 if (isCorrect && typeof confetti === 'function') {
-                    confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+                    confetti({ particleCount: 50, spread: 55, origin: { y: 0.6 } });
                 }
                 const isFinished = data?.round_status === 'finished';
+                const delayMs = isCorrect ? 4500 : 5500;
                 setTimeout(() => {
                     if (isFinished) window.location.href = `/play/results/${roundId}`;
                     else window.location.reload();
-                }, 4500);
+                }, delayMs);
             } catch (_) {}
         }
         setInterval(checkVerificationResult, 800);
@@ -435,11 +436,11 @@ const debugResult = result ? {
                     if (!answerId) return;
 
                     if (isJuegoFinal) {
-                        // Juego final: solo marcar, no enviar. El docente evalúa.
+                        // Juego final: solo marcar, no enviar. El docente evalúa. Borde azul en todos los lados.
                         form.querySelectorAll('.option-btn').forEach((b) => {
-                            b.classList.remove('ring-4', 'ring-primary', 'ring-offset-2', 'ring-offset-zinc-950');
+                            b.classList.remove('option-btn-selected');
                         });
-                        target.classList.add('ring-4', 'ring-primary', 'ring-offset-2', 'ring-offset-zinc-950');
+                        target.classList.add('option-btn-selected');
                         try {
                             await fetch('/api/student-select-answer', {
                                 method: 'POST',
@@ -469,7 +470,36 @@ const debugResult = result ? {
                             form.dataset.submitting = '0';
                             return;
                         }
-                        showResult(data ?? {});
+                        // Preselección: parpadeo con setInterval (visible en todos los navegadores) y confetti una sola vez si acertó
+                        if (!isJuegoFinal && form) {
+                            form.querySelectorAll('.option-btn').forEach((b) => { b.style.opacity = '1'; });
+                            const blinkColors = { green: '#22c55e', red: '#ef4444', yellow: '#eab308' };
+                            const dark = '#18181b';
+                            let tick = 0;
+                            const blink = setInterval(() => {
+                                const on = tick % 2 === 0;
+                                form.querySelectorAll('.option-btn').forEach((b) => {
+                                    const aid = b.getAttribute('data-answer-id');
+                                    const isCorrectAns = b.getAttribute('data-is-correct') === 'true';
+                                    if (aid === answerId) {
+                                        b.style.transition = 'none';
+                                        b.style.backgroundColor = on ? (data.correct ? blinkColors.green : blinkColors.red) : dark;
+                                        b.style.borderColor = on ? (data.correct ? blinkColors.green : blinkColors.red) : '#3f3f46';
+                                    } else if (!data.correct && isCorrectAns) {
+                                        b.style.transition = 'none';
+                                        b.style.backgroundColor = on ? blinkColors.yellow : dark;
+                                        b.style.borderColor = on ? blinkColors.yellow : '#3f3f46';
+                                    }
+                                });
+                                tick++;
+                                if (tick >= 6) { clearInterval(blink); setTimeout(() => showResult(data ?? {}), 400); }
+                            }, 450);
+                            if (data.correct && typeof confetti === 'function') {
+                                confetti({ particleCount: 50, spread: 55, origin: { y: 0.6 } });
+                            }
+                        } else {
+                            showResult(data ?? {});
+                        }
                     } catch (err) {
                         console.error('[submitAnswer] Excepción:', err);
                         alert('Error al enviar: ' + (err instanceof Error ? err.message : String(err)));
