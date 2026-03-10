@@ -1,0 +1,184 @@
+---
+import DashboardLayout from "@/layouts/DashboardLayout.astro";
+import { Icon } from 'astro-icon/components';
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
+
+const user = await Astro.locals.getUser();
+if (!user) return Astro.redirect("/");
+const { data: profile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
+if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redirect("/dashboard");
+
+// Filtros desde URL
+const seasonId = Astro.url.searchParams.get('season_id') ? parseInt(Astro.url.searchParams.get('season_id')!) : null;
+const programId = Astro.url.searchParams.get('program_id') ? parseInt(Astro.url.searchParams.get('program_id')!) : null;
+
+// Cargar temporadas y programas
+const { data: seasons } = await Astro.locals.supabase
+    .from('seasons')
+    .select('id, name, year, semester')
+    .order('year', { ascending: false })
+    .order('semester', { ascending: false });
+
+const { data: programs } = await Astro.locals.supabase
+    .from('programs')
+    .select('id, name')
+    .order('name');
+
+// Obtener finalistas si hay temporada seleccionada
+let finalistsByProgram: { programId: number; programName: string; finalists: { player_id: number; name: string; score: number; final_rank: number; eventName: string }[] }[] = [];
+
+if (seasonId) {
+    const { data: seasonEvents } = await supabaseAdmin
+        .from('events')
+        .select('id, name')
+        .eq('season_id', seasonId);
+
+    const eventIds = (seasonEvents || []).map((e: { id: number }) => e.id);
+    const eventMap = new Map((seasonEvents || []).map((e: { id: number; name: string }) => [e.id, e.name]));
+
+    if (eventIds.length > 0) {
+        const { data: eps } = await supabaseAdmin
+            .from('event_players')
+            .select(`
+                player_id, score, final_rank, event_id,
+                players(id, name, program_id, programs(id, name))
+            `)
+            .eq('is_finalist', true)
+            .in('event_id', eventIds);
+
+        type EP = {
+            player_id: number;
+            score: number;
+            final_rank: number;
+            event_id: number;
+            players: { id: number; name: string; program_id: number | null; programs: { id: number; name: string } | null } | null;
+        };
+
+        let items = (eps || []) as EP[];
+
+        if (programId) {
+            items = items.filter((ep) => ep.players?.program_id === programId);
+        }
+
+        // Agrupar por programa
+        const byProgram = new Map<number, { programName: string; list: { player_id: number; name: string; score: number; final_rank: number; eventName: string }[] }>();
+
+        for (const ep of items) {
+            const progId = ep.players?.program_id ?? -1;
+            const progName = ep.players?.programs?.name ?? 'Sin programa';
+
+            if (!byProgram.has(progId)) {
+                byProgram.set(progId, { programName: progName, list: [] });
+            }
+            byProgram.get(progId)!.list.push({
+                player_id: ep.player_id,
+                name: ep.players?.name ?? 'Desconocido',
+                score: ep.score ?? 0,
+                final_rank: ep.final_rank ?? 1,
+                eventName: eventMap.get(ep.event_id) ?? '—',
+            });
+        }
+
+        finalistsByProgram = Array.from(byProgram.entries())
+            .map(([progId, data]) => ({ programId: progId, programName: data.programName, finalists: data.list }))
+            .sort((a, b) => a.programName.localeCompare(b.programName));
+    }
+}
+---
+
+<DashboardLayout title="Finalistas por Programa">
+    <div class="mb-8">
+        <h1 class="text-4xl font-black italic tracking-tighter text-slate-900 uppercase">
+            Finalistas <span class="text-red-600">por Programa</span>
+        </h1>
+        <p class="text-slate-500 font-medium mt-1">Consulta los ganadores por temporada y programa</p>
+    </div>
+
+    <!-- Filtros -->
+    <form method="GET" action="/dashboard/finalistas" class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="form-control">
+                <label class="label"><span class="label-text font-bold text-slate-600">Temporada</span></label>
+                <select name="season_id" required class="select select-bordered w-full bg-slate-50 border-slate-200">
+                    <option value="">Selecciona temporada...</option>
+                    {seasons?.map((s) => (
+                        <option value={s.id} selected={seasonId === s.id}>{s.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div class="form-control">
+                <label class="label"><span class="label-text font-bold text-slate-600">Programa (opcional)</span></label>
+                <select name="program_id" class="select select-bordered w-full bg-slate-50 border-slate-200">
+                    <option value="" selected={!programId}>Todos los programas</option>
+                    {programs?.map((p) => (
+                        <option value={p.id} selected={programId === p.id}>{p.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div class="form-control flex flex-col justify-end">
+                <button type="submit" class="btn btn-primary text-white font-bold">
+                    <Icon name="lucide:search" class="w-4 h-4" />
+                    Consultar
+                </button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Resultados -->
+    {!seasonId ? (
+        <div class="bg-slate-50 rounded-2xl border border-slate-200 p-12 text-center">
+            <Icon name="lucide:filter" class="w-16 h-16 text-slate-300 mx-auto mb-4" />
+            <p class="text-slate-500 font-medium">Selecciona una temporada y haz clic en Consultar para ver los finalistas</p>
+        </div>
+    ) : finalistsByProgram.length === 0 ? (
+        <div class="bg-slate-50 rounded-2xl border border-slate-200 p-12 text-center">
+            <Icon name="lucide:trophy" class="w-16 h-16 text-slate-300 mx-auto mb-4" />
+            <p class="text-slate-500 font-medium">No hay finalistas registrados para esta temporada{programId ? ' y programa' : ''}</p>
+        </div>
+    ) : (
+        <div class="space-y-8">
+            {finalistsByProgram.map((group) => (
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="px-6 py-4 bg-slate-50 border-b border-slate-200">
+                        <h2 class="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                            <Icon name="lucide:graduation-cap" class="w-5 h-5 text-red-600" />
+                            {group.programName}
+                            <span class="text-sm font-normal text-slate-500 normal-case">
+                                ({group.finalists.length} finalista{group.finalists.length !== 1 ? 's' : ''})
+                            </span>
+                        </h2>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra">
+                            <thead>
+                                <tr class="bg-slate-50/50">
+                                    <th class="font-black text-[10px] uppercase text-slate-500">#</th>
+                                    <th class="font-black text-[10px] uppercase text-slate-500">Estudiante</th>
+                                    <th class="font-black text-[10px] uppercase text-slate-500">Puntaje</th>
+                                    <th class="font-black text-[10px] uppercase text-slate-500">Evento</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {group.finalists.map((f, i) => (
+                                    <tr>
+                                        <td class="font-bold text-slate-600">{i + 1}</td>
+                                        <td>
+                                            <div class="flex items-center gap-3">
+                                                <div class="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center font-black text-red-600 uppercase text-sm">
+                                                    {f.name.charAt(0)}
+                                                </div>
+                                                <span class="font-bold text-slate-800">{f.name}</span>
+                                            </div>
+                                        </td>
+                                        <td class="font-bold text-slate-700">{f.score?.toLocaleString('es-CO') ?? '—'}</td>
+                                        <td class="text-sm text-slate-600">{f.eventName}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            ))}
+        </div>
+    )}
+</DashboardLayout>

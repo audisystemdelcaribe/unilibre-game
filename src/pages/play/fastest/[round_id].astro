@@ -93,16 +93,17 @@ const submitError = Astro.url.searchParams.get('error');
 ---
 
 <PlayLayout title="Mente más Rápida">
-    <div class="flex flex-col min-h-screen p-4 bg-zinc-950 text-white font-sans">
-        <header class="text-center py-4">
-            <p class="text-primary font-black uppercase text-[10px] tracking-widest mb-2">Mente más Rápida</p>
-            <h1 class="text-2xl md:text-3xl font-black italic leading-tight">
+    <div class="flex flex-col h-[100dvh] max-h-[100svh] min-h-[500px] bg-zinc-950 text-white font-sans overflow-hidden">
+        <header class="shrink-0 text-center py-3 px-4">
+            <p class="text-primary font-black uppercase text-[10px] tracking-widest mb-1">Mente más Rápida</p>
+            <h1 class="text-xl md:text-2xl font-black italic leading-tight line-clamp-2">
                 {questionTitle}
             </h1>
         </header>
 
-        <main class="flex-1 flex flex-col justify-center max-w-lg mx-auto w-full">
-            <div class="space-y-6">
+        <main class="flex-1 min-h-0 flex flex-col max-w-lg mx-auto w-full px-4 overflow-hidden">
+            <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain pr-1 -mr-1">
+                <div class="space-y-4 pb-2">
                     <p class="text-center text-zinc-400 text-sm">Toca los ítems en el orden correcto. Toca de nuevo para deshacer.</p>
                     {items.length === 0 && (
                         <div class="p-6 bg-amber-500/20 border border-amber-500/50 rounded-2xl text-amber-400 text-center">
@@ -116,30 +117,35 @@ const submitError = Astro.url.searchParams.get('error');
                     )}
 
                     {items.length > 0 && (
-                    <form id="ff-form" class="space-y-4">
+                    <form id="ff-form" class="space-y-3">
                         <input type="hidden" name="ff_round_id" value={ffRound.id} />
                         <input type="hidden" name="event_round_id" value={round_id} />
                         <input type="hidden" name="selected_order" id="selected-order" value="[]" />
 
-                        <div id="items-container" class="space-y-3">
+                        <div id="items-container" class="space-y-2">
                             {items.map((item: { id: number; text: string }, idx: number) => (
                                 <button
                                     type="button"
                                     data-item-id={String(item.id)}
-                                    class="ff-item w-full p-5 rounded-2xl bg-zinc-900 border-2 border-zinc-700 text-left font-bold text-lg transition-all flex items-center gap-4 cursor-pointer hover:border-zinc-600"
+                                    class="ff-item w-full p-4 md:p-5 rounded-2xl bg-zinc-900 border-2 border-zinc-700 text-left font-bold text-base md:text-lg transition-all flex items-center gap-3 cursor-pointer hover:border-zinc-600 touch-manipulation"
                                 >
-                                    <span class="order-badge hidden w-10 h-10 rounded-xl bg-primary text-white shrink-0 inline-flex items-center justify-center text-lg font-black"></span>
+                                    <span class="order-badge hidden w-9 h-9 md:w-10 md:h-10 rounded-xl bg-primary text-white shrink-0 inline-flex items-center justify-center text-base md:text-lg font-black"></span>
                                     <span class="item-text">{item.text}</span>
                                 </button>
                             ))}
                         </div>
-
-                        <button type="submit" id="btn-submit" disabled class="btn btn-primary w-full py-4 font-black opacity-50 cursor-not-allowed">
-                            Enviar orden
-                        </button>
                     </form>
                     )}
                 </div>
+            </div>
+
+            {items.length > 0 && (
+                <div class="shrink-0 pt-3 pb-[env(safe-area-inset-bottom,0.5rem)]">
+                    <button type="submit" form="ff-form" id="btn-submit" disabled class="btn btn-primary w-full py-4 font-black opacity-50 cursor-not-allowed touch-manipulation">
+                        Enviar orden
+                    </button>
+                </div>
+            )}
         </main>
     </div>
 
