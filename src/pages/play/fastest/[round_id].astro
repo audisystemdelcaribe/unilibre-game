@@ -225,6 +225,11 @@ const submitError = Astro.url.searchParams.get('error');
                     .then(function(data) {
                         var main = document.querySelector('main');
                         if (main && data.success) {
+                            try {
+                                var snd = new Audio(data.correct ? '/correcta.mp3' : '/incorrecta.mp3');
+                                snd.volume = 0.8;
+                                snd.play().catch(function() {});
+                            } catch (e) {}
                             form.remove();
                             var resultHtml;
                             if (data.correct) {

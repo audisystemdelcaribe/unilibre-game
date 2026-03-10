@@ -352,6 +352,14 @@ const debugResult = result ? {
         setInterval(checkLifelineState, 1500);
         checkLifelineState();
 
+        function playResultSound(isCorrect) {
+            try {
+                const audio = new Audio(isCorrect ? '/correcta.mp3' : '/incorrecta.mp3');
+                audio.volume = 0.8;
+                audio.play().catch(() => {});
+            } catch (_) {}
+        }
+
         function showResult(data) {
             if (!mainArea) return;
             const isCorrect = data?.correct ?? false;
@@ -393,6 +401,7 @@ const debugResult = result ? {
                 verificationAnimating = true;
                 window.verificationAnimating = true;
                 const isCorrect = vr.is_correct;
+                playResultSound(isCorrect);
                 const studentAnswerId = String(vr.student_answer_id);
                 const correctAnswerId = String(vr.correct_answer_id);
                 const blinkColors = { green: '#22c55e', red: '#ef4444', yellow: '#eab308' };
@@ -470,8 +479,9 @@ const debugResult = result ? {
                             form.dataset.submitting = '0';
                             return;
                         }
-                        // Preselección: parpadeo con setInterval (visible en todos los navegadores) y confetti una sola vez si acertó
+                        // Preselección: sonido al evaluar, parpadeo y confetti una sola vez si acertó
                         if (!isJuegoFinal && form) {
+                            playResultSound(data.correct);
                             form.querySelectorAll('.option-btn').forEach((b) => { b.style.opacity = '1'; });
                             const blinkColors = { green: '#22c55e', red: '#ef4444', yellow: '#eab308' };
                             const dark = '#18181b';
@@ -498,6 +508,7 @@ const debugResult = result ? {
                                 confetti({ particleCount: 50, spread: 55, origin: { y: 0.6 } });
                             }
                         } else {
+                            playResultSound(data?.correct ?? false);
                             showResult(data ?? {});
                         }
                     } catch (err) {
@@ -509,6 +520,17 @@ const debugResult = result ? {
             });
         }
     </script>
+    {hasResponded && (
+        <script is:inline define:vars={{ isCorrect }}>
+            (function() {
+                try {
+                    var a = new Audio(isCorrect ? '/correcta.mp3' : '/incorrecta.mp3');
+                    a.volume = 0.8;
+                    a.play().catch(function() {});
+                } catch (e) {}
+            })();
+        </script>
+    )}
     <script is:inline define:vars={{ roundId: round_id, currentQ: round?.current_question_id, startTime: round?.question_started_at, limit: round?.questions?.game_levels?.time_limit || 30, isJuegoFinal }}>
         window.isJuegoFinal = isJuegoFinal;
         let isDone = false;
