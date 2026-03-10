@@ -173,7 +173,7 @@ if (confirmResult?.data?.clasico_round_id) {
         </script>
     )}
 
-    <div class="max-w-5xl mx-auto space-y-6">
+    <div class="max-w-7xl mx-auto space-y-6">
 
         <!-- Árbol de premios: solo para Clásico (va en el lateral). Preselección sin escala. -->
 
@@ -268,9 +268,9 @@ if (confirmResult?.data?.clasico_round_id) {
             )
         ) : (
             <!-- VISTA: LOBBY O JUEGO -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div class="lg:col-span-2 space-y-6">
-                        <div class="bg-zinc-900 text-white p-10 rounded-[3.5rem] border-b-8 border-primary shadow-2xl">
+                <div class="grid grid-cols-1 lg:grid-cols-[1fr_240px] xl:grid-cols-[1fr_280px] gap-6 lg:gap-8 max-h-[100vh] min-h-0">
+                    <div class="min-w-0 space-y-6 overflow-y-auto">
+                        <div class="bg-zinc-900 text-white p-6 sm:p-8 lg:p-10 rounded-[2rem] lg:rounded-[3.5rem] border-b-4 lg:border-b-8 border-primary shadow-2xl">
                             {isWaiting ? (
                                     <div class="text-center">
                                         <p class="text-zinc-500 font-bold uppercase text-xs mb-4">PIN</p>
@@ -452,34 +452,33 @@ if (confirmResult?.data?.clasico_round_id) {
                         )}
                     </div>
 
-                    <!-- LATERAL: Clásico = escalera de premios (nivel 1 abajo, sin scroll) -->
+                    <!-- LATERAL: Clásico = escalera de premios (nivel 1 abajo) -->
                     {isClasico && prizeLevels && prizeLevels.length > 0 ? (
-                        <div class="bg-gradient-to-b from-violet-950 to-zinc-950 p-6 rounded-[2rem] border border-violet-800/50 shadow-2xl flex flex-col h-[550px] overflow-hidden">
-                            <h3 class="font-black italic uppercase text-amber-400 text-center text-sm mb-3 tracking-wider shrink-0">
+                        <div class="bg-zinc-900 p-4 rounded-2xl border border-zinc-700 shadow-xl flex flex-col max-h-[50vh] overflow-hidden">
+                            <h3 class="font-black italic uppercase text-zinc-400 text-center text-xs mb-2 tracking-wider shrink-0">
                                 Escalera de premios
                             </h3>
-                            <div class="flex-1 flex flex-col-reverse min-h-0 gap-0.5 overflow-hidden">
+                            <div class="flex-1 flex flex-col-reverse min-h-0 gap-0.5 overflow-y-auto overflow-x-hidden">
                                 {prizeLevels.map((l) => {
                                     const isCurrent = currentLevel?.id === l.id;
                                     const isSafe = l.is_safe_level;
                                     return (
                                         <div class:list={[
-                                            "flex items-center justify-between gap-2 px-3 flex-1 min-h-0 text-white/90 font-bold text-[10px] sm:text-xs",
-                                            isCurrent && "bg-amber-500/90 text-zinc-900 rounded-r-lg -mr-1 pr-4",
-                                            !isCurrent && isSafe && "text-amber-300/90",
-                                            !isCurrent && !isSafe && "text-zinc-300"
+                                            "flex items-center justify-between gap-2 px-2 py-1 sm:px-3 sm:py-1.5 flex-shrink-0 text-zinc-300",
+                                            isCurrent && "bg-primary text-white rounded-lg font-bold",
+                                            !isCurrent && isSafe && "text-zinc-200"
                                         ]}>
-                                            <span class="font-black tabular-nums w-5">{l.difficulty_order}</span>
-                                            <span class="text-amber-400/60">◆</span>
-                                            <span class="font-mono font-black flex-1 text-right truncate">{formatMoney(l.money_value)}</span>
-                                            {isSafe && !isCurrent && <Icon name="lucide:shield-check" class="w-3 h-3 text-amber-400/70 shrink-0" />}
+                                            <span class="font-black tabular-nums text-lg sm:text-xl w-7 sm:w-8 shrink-0">{l.difficulty_order}</span>
+                                            <span class="text-zinc-500 text-xs shrink-0">◆</span>
+                                            <span class="font-mono font-black text-right truncate text-base sm:text-lg min-w-0">{formatMoney(l.money_value)}</span>
+                                            {isSafe && !isCurrent && <Icon name="lucide:shield-check" class="w-3.5 h-3.5 text-zinc-500 shrink-0" />}
                                         </div>
                                     );
                                 })}
                             </div>
                         </div>
                     ) : (
-                        <div class="bg-white p-8 rounded-[3rem] border border-base-300 shadow-sm flex flex-col h-[550px]">
+                        <div class="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm flex flex-col max-h-[50vh] overflow-hidden">
                             <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">
                                 {isWaiting ? 'Lobby' : 'Respuestas'}
                             </h3>
