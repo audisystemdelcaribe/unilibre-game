@@ -16,7 +16,7 @@ const { data: player } = await Astro.locals.supabase
 
 const { data: round, error } = await Astro.locals.supabase
     .from('event_rounds')
-    .select('*, events(name, game_mode_id)')
+    .select('*, events(name, game_mode_id, season_id, program_id, faculty_id, scope)')
     .eq('id', round_id)
     .single();
 
@@ -30,14 +30,12 @@ if (isMenteRapida && round.status === 'finished') {
     return Astro.redirect("/play?error=fin_participacion");
 }
 
-// Mente más Rápida: solo finalistas pueden entrar; verificar antes de redirigir
-const { data: ep } = await Astro.locals.supabase
-    .from('event_players')
-    .select('is_finalist')
-    .eq('event_id', round.event_id)
-    .eq('player_id', player.id)
-    .maybeSingle();
-const isFinalist = ep?.is_finalist === true;
+// Mente más Rápida: solo finalistas del evento Preselección (game_mode 1) misma temporada/ámbito
+let isFinalist = false;
+if (isMenteRapida) {
+    const { isFinalistInPreseleccion } = await import('../../../lib/preseleccionFinalist');
+    isFinalist = await isFinalistInPreseleccion(Astro.locals.supabase, player.id, round.events || {});
+}
 
 // Evitar bucle: si venimos de un error en fastest, no redirigir de vuelta
 const fromFastestError = Astro.url.searchParams.get('from') === 'fastest_error';

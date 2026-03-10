@@ -64,8 +64,23 @@ export const fastestFingerActions = {
             await ensureStaff(context);
             const rId = parseInt(round_id);
 
-            const { data: round } = await supabaseAdmin.from('event_rounds').select('event_id').eq('id', rId).single();
+            const { data: round } = await supabaseAdmin.from('event_rounds').select('event_id, classroom_group_id, status').eq('id', rId).single();
             if (!round) throw new Error("Ronda no encontrada");
+
+            // Si venimos de waiting (sin preselección): marcar a todos los participantes como finalistas
+            if (round.status === 'waiting') {
+                const { data: participants } = await supabaseAdmin
+                    .from('event_players')
+                    .select('player_id')
+                    .eq('event_id', round.event_id)
+                    .eq('classroom_group_id', round.classroom_group_id ?? '');
+                if (participants?.length) {
+                    for (const p of participants) {
+                        await supabaseAdmin.from('event_players').update({ is_finalist: true })
+                            .eq('event_id', round.event_id).eq('player_id', p.player_id).eq('classroom_group_id', round.classroom_group_id ?? '');
+                    }
+                }
+            }
 
             const { data: allSeqs } = await supabaseAdmin.from('fastest_finger_sequences').select('id');
             if (!allSeqs?.length) throw new Error("No hay retos configurados. Crea al menos uno en Mente más Rápida.");

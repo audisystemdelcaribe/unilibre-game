@@ -75,10 +75,10 @@ if (round?.events?.game_mode_id === 2) {
     usedLifelinesInRound = [...new Set((usage || []).map((u) => u.lifeline_code))];
 }
 
-// Silla Caliente: orden aleatorio pero determinístico (participante y público ven igual)
-const displayAnswers = isJuegoFinal && round?.questions?.answers
+// Preselección y Clásico: orden aleatorio por pregunta (cambia cada vez que se lanza una pregunta)
+const displayAnswers = round?.questions?.answers
     ? seededShuffle(round.questions.answers, (round.id || 0) * 31 + (round.current_question_id || 0))
-    : (round?.questions?.answers ?? []);
+    : [];
 
 // 3. Procesar resultado de la acción
 const result = Astro.getActionResult(actions.submitAnswer);
@@ -96,6 +96,52 @@ const debugResult = result ? {
 ---
 
 <PlayLayout title="¡Carrera en Vivo!">
+    <style>
+        .option-btn.flash-green,
+        .option-btn.flash-red,
+        .option-btn.flash-correct {
+            animation-fill-mode: both;
+        }
+        @keyframes flash-green-black {
+            0%, 100% {
+                background: rgb(34 197 94) !important;
+                border-color: rgb(34 197 94) !important;
+            }
+            50% {
+                background: rgb(24 24 27) !important;
+                border-color: rgb(63 63 70) !important;
+            }
+        }
+        @keyframes flash-red-black {
+            0%, 100% {
+                background: rgb(239 68 68) !important;
+                border-color: rgb(239 68 68) !important;
+            }
+            50% {
+                background: rgb(24 24 27) !important;
+                border-color: rgb(63 63 70) !important;
+            }
+        }
+        @keyframes flash-correct-green {
+            0%, 100% {
+                background: rgb(34 197 94) !important;
+                border-color: rgb(34 197 94) !important;
+            }
+            50% {
+                background: rgb(22 163 74) !important;
+                border-color: rgb(34 197 94) !important;
+            }
+        }
+        .option-btn.flash-green {
+            animation: flash-green-black 0.45s ease-in-out 6;
+        }
+        .option-btn.flash-red {
+            animation: flash-red-black 0.45s ease-in-out 6;
+        }
+        .option-btn.flash-correct {
+            animation: flash-correct-green 0.45s ease-in-out 6;
+        }
+    </style>
     <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" is:inline></script>
     {debugResult && (
         <script define:vars={{ debugResult }}>
@@ -286,6 +332,16 @@ const debugResult = result ? {
                     }
                     lifeline5050Applied = true;
                 }
+                // Última palabra: fondo amarillo en la seleccionada y bloquear cambios
+                if (used?.['last_word'] && form) {
+                    form.querySelectorAll('.option-btn').forEach((b) => {
+                        b.style.pointerEvents = 'none';
+                        b.disabled = true;
+                        if (b.classList.contains('ring-4') || b.classList.contains('ring-primary')) {
+                            b.classList.add('!bg-amber-500/40', 'border-amber-400');
+                        }
+                    });
+                }
             } catch (_) {}
         }
         setInterval(checkLifelineState, 1500);
@@ -320,6 +376,42 @@ const debugResult = result ? {
             if (timeoutArea) timeoutArea.classList.add('hidden');
             mainArea.insertAdjacentHTML('beforeend', resultHtml);
         }
+
+        let verificationAnimating = false;
+        async function checkVerificationResult() {
+            if (!isJuegoFinal || !roundId || !questionId || verificationAnimating) return;
+            try {
+                const r = await fetch(`/api/round-lifeline-state?round_id=${roundId}&question_id=${questionId || ''}`);
+                const data = await r.json();
+                const vr = data?.verification_result;
+                if (!vr || String(vr.question_id) !== String(questionId)) return;
+                verificationAnimating = true;
+                window.verificationAnimating = true;
+                const isCorrect = vr.is_correct;
+                const studentAnswerId = String(vr.student_answer_id);
+                const correctAnswerId = String(vr.correct_answer_id);
+                form?.querySelectorAll('.option-btn').forEach((b) => {
+                    const aid = b.getAttribute('data-answer-id');
+                    b.classList.remove('!bg-amber-500/40', 'border-amber-400', 'bg-zinc-900', 'border-zinc-800');
+                    b.style.backgroundColor = '';
+                    b.style.borderColor = '';
+                    if (aid === studentAnswerId) {
+                        b.classList.add(isCorrect ? 'flash-green' : 'flash-red');
+                    } else if (aid === correctAnswerId && !isCorrect) {
+                        b.classList.add('flash-correct');
+                    }
+                });
+                if (isCorrect && typeof confetti === 'function') {
+                    confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 } });
+                }
+                const isFinished = data?.round_status === 'finished';
+                setTimeout(() => {
+                    if (isFinished) window.location.href = `/play/results/${roundId}`;
+                    else window.location.reload();
+                }, 4500);
+            } catch (_) {}
+        }
+        setInterval(checkVerificationResult, 800);
 
         if (form) {
             form.querySelectorAll('.option-btn').forEach((btn) => {
@@ -379,6 +471,7 @@ const debugResult = result ? {
 
         // SINCRONIZACIÓN - Verificar nueva pregunta o fin de ronda (evitar reload por null transitorio)
         async function sync() {
+            if (window.verificationAnimating) return;
             const client = window.supabaseClient;
             if (!client) return;
             const { data } = await client.from('event_rounds').select('current_question_id, status').eq('id', roundId).maybeSingle();

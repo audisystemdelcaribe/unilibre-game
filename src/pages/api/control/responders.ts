@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { seededShuffle } from "@/lib/utils";
 
 /**
  * API para el panel de control: devuelve estudiantes conectados y/o que respondieron.
@@ -53,11 +54,12 @@ export const GET: APIRoute = async ({ locals, url }) => {
 
     const result: {
         connected: { player_id: number; name: string }[];
-        responders: { player_id: number; name: string }[];
+        responders: { player_id: number; name: string; response_time_ms?: number; is_correct?: boolean }[];
         current_question_id: number | null;
         status: string;
         fastest_finger_attempts?: { player_id: number; name: string; response_time_ms: number; is_correct: boolean }[];
         student_selection?: { player_id: number; name: string; answer_id: number; answer_text: string; letter: string } | null;
+        last_word_used?: boolean;
     } = {
         connected: [],
         responders: [],
@@ -84,6 +86,18 @@ export const GET: APIRoute = async ({ locals, url }) => {
                 is_correct: a.is_correct,
             }));
         }
+    }
+
+    // Última palabra usada en la pregunta actual (Clásico)
+    if (round.status === "active" && round.current_question_id && (round?.events as { game_mode_id?: number })?.game_mode_id === 2) {
+        const { data: lw } = await supabaseAdmin
+            .from("round_lifeline_usage")
+            .select("id")
+            .eq("round_id", parseInt(roundId, 10))
+            .eq("question_id", round.current_question_id)
+            .eq("lifeline_code", "last_word")
+            .maybeSingle();
+        result.last_word_used = !!lw;
     }
 
     // Siempre traer conectados (event_players)
@@ -115,7 +129,8 @@ export const GET: APIRoute = async ({ locals, url }) => {
                 const s = sel[0];
                 const { data: ans } = await supabaseAdmin.from("answers").select("answer_text").eq("id", s.answer_id).single();
                 const { data: ansList } = await supabaseAdmin.from("answers").select("id").eq("question_id", round.current_question_id).order("id");
-                const idx = (ansList || []).findIndex((a: { id: number }) => a.id === s.answer_id);
+                const shuffled = seededShuffle(ansList || [], parseInt(roundId, 10) * 31 + (round.current_question_id || 0));
+                const idx = shuffled.findIndex((a: { id: number }) => a.id === s.answer_id);
                 const letter = ["A", "B", "C", "D"][idx >= 0 ? idx : 0];
                 result.student_selection = {
                     player_id: s.player_id,
@@ -130,7 +145,7 @@ export const GET: APIRoute = async ({ locals, url }) => {
         const roundIdNum = parseInt(roundId, 10);
         const { data: answers } = await supabaseAdmin
             .from("game_answers")
-            .select("player_id, players(name)")
+            .select("player_id, response_time_ms, is_correct, players(name)")
             .eq("question_id", round.current_question_id)
             .eq("round_id", isNaN(roundIdNum) ? roundId : roundIdNum);
 
@@ -141,6 +156,8 @@ export const GET: APIRoute = async ({ locals, url }) => {
                 .map((a) => ({
                     player_id: a.player_id,
                     name: (a.players as { name?: string } | null)?.name || "Estudiante",
+                    response_time_ms: a.response_time_ms,
+                    is_correct: a.is_correct,
                 }));
         }
         }

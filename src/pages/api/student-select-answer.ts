@@ -44,6 +44,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
         });
     }
 
+    // Última palabra: no permitir cambiar la respuesta
+    const { data: lastWord } = await supabaseAdmin
+        .from("round_lifeline_usage")
+        .select("id")
+        .eq("round_id", parseInt(round_id))
+        .eq("question_id", parseInt(question_id))
+        .eq("lifeline_code", "last_word")
+        .maybeSingle();
+    if (lastWord) {
+        return new Response(JSON.stringify({ error: "Última palabra activada. No puedes cambiar tu respuesta." }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
     const { error } = await supabaseAdmin.from("student_answer_selection").upsert(
         {
             round_id: parseInt(round_id),

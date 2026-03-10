@@ -153,7 +153,7 @@ if (isClasico && (isActive || isWaiting)) {
     showAudienceVotes = !!(usage || []).find((u) => u.lifeline_code === 'publico' && u.question_id === round?.current_question_id);
 }
 
-const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound) || Astro.getActionResult(actions.launchFastestFinger) || Astro.getActionResult(actions.confirmWinner) || Astro.getActionResult(actions.useLifeline5050) || Astro.getActionResult(actions.useLifelineCambiarPregunta) || Astro.getActionResult(actions.useLifelineLlamada) || Astro.getActionResult(actions.useLifelinePublico) || Astro.getActionResult(actions.verifyClasicoAnswer);
+const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound) || Astro.getActionResult(actions.launchFastestFinger) || Astro.getActionResult(actions.confirmWinner) || Astro.getActionResult(actions.useLifeline5050) || Astro.getActionResult(actions.useLifelineCambiarPregunta) || Astro.getActionResult(actions.useLifelineLlamada) || Astro.getActionResult(actions.useLifelinePublico) || Astro.getActionResult(actions.useLastWord) || Astro.getActionResult(actions.verifyClasicoAnswer);
 
 // Si confirmWinner redirigió a Silla Caliente, ir al panel del evento Clásico
 const confirmResult = Astro.getActionResult(actions.confirmWinner);
@@ -165,6 +165,13 @@ if (confirmResult?.data?.clasico_round_id) {
 
 <DashboardLayout title="Control de Mando" actionResult={result}>
     <script is:inline src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+    {result?.data?.success && result?.data?.message?.includes('Correcto') && (
+        <script is:inline>
+            if (typeof confetti === 'function') {
+                confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, colors: ['#22c55e', '#16a34a', '#15803d'] });
+            }
+        </script>
+    )}
 
     <div class="max-w-5xl mx-auto space-y-6">
 
@@ -338,10 +345,17 @@ if (confirmResult?.data?.clasico_round_id) {
                                             <div id="student-selection-box" class="mt-4 p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl hidden">
                                                 <p class="text-[10px] text-amber-400 uppercase font-black mb-2">El estudiante marcó:</p>
                                                 <p id="student-selection-text" class="text-lg font-bold text-white mb-3">—</p>
-                                                <form method="POST" action={actions.verifyClasicoAnswer} class="inline">
-                                                    <input type="hidden" name="round_id" value={round_id} />
-                                                    <button type="submit" class="btn btn-primary btn-sm text-white font-bold">Verificar respuesta</button>
-                                                </form>
+                                                <div class="flex flex-wrap gap-2">
+                                                    <form method="POST" action={actions.useLastWord} class="inline" id="last-word-form">
+                                                        <input type="hidden" name="round_id" value={round_id} />
+                                                        <input type="hidden" name="question_id" value={round?.current_question_id} />
+                                                        <button type="submit" class="btn btn-warning btn-sm text-zinc-900 font-bold" id="last-word-btn" title="Bloquea la respuesta del estudiante (fondo amarillo) y no podrá cambiarla">Última palabra</button>
+                                                    </form>
+                                                    <form method="POST" action={actions.verifyClasicoAnswer} class="inline">
+                                                        <input type="hidden" name="round_id" value={round_id} />
+                                                        <button type="submit" class="btn btn-primary btn-sm text-white font-bold">Verificar respuesta</button>
+                                                    </form>
+                                                </div>
                                                 <p class="text-[10px] text-zinc-500 mt-2">El sistema verifica en la base de datos si es correcta o incorrecta.</p>
                                             </div>
                                         )}
@@ -534,17 +548,20 @@ if (confirmResult?.data?.clasico_round_id) {
                 const list = document.getElementById('responders-list');
                 if (countEl) countEl.innerText = data.responders.length;
                 if (list && !isClasico) {
+                    const correct = data.responders.filter(r => r.is_correct).sort((a,b) => (a.response_time_ms ?? 999999) - (b.response_time_ms ?? 999999));
+                    const minTime = correct.length > 0 ? correct[0].response_time_ms : null;
+                    const fastestCorrectIds = new Set(correct.filter(c => c.response_time_ms === minTime).map(c => c.player_id));
                     data.responders.forEach(r => {
                         if (!respondidosProcesados.has(r.player_id)) {
                             respondidosProcesados.add(r.player_id);
                             const div = document.createElement('div');
-                            div.className = "p-4 bg-green-50 text-green-700 rounded-2xl text-xs font-bold flex justify-between border border-green-100 animate-in slide-in-from-right";
+                            const isFastestCorrect = r.is_correct && fastestCorrectIds.has(r.player_id);
+                            div.className = `p-4 rounded-2xl text-xs font-bold flex justify-between border animate-in slide-in-from-right ${isFastestCorrect ? 'bg-amber-100 text-amber-800 border-amber-400' : r.is_correct ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'}`;
                             const s1 = document.createElement('span');
-                            s1.textContent = r.name || 'Estudiante';
+                            s1.textContent = (r.name || 'Estudiante') + (isFastestCorrect ? ' 🏆' : '');
                             div.appendChild(s1);
-                            div.appendChild(document.createTextNode(' '));
                             const s2 = document.createElement('span');
-                            s2.textContent = '✓';
+                            s2.textContent = (r.response_time_ms != null ? (r.response_time_ms/1000).toFixed(2) + 's ' : '') + (r.is_correct ? '✓' : '✗');
                             div.appendChild(s2);
                             list.prepend(div);
                         }
@@ -556,10 +573,17 @@ if (confirmResult?.data?.clasico_round_id) {
             if (isClasico && data.student_selection) {
                 const box = document.getElementById('student-selection-box');
                 const text = document.getElementById('student-selection-text');
+                const lastWordBtn = document.getElementById('last-word-btn');
+                const lastWordForm = document.getElementById('last-word-form');
                 if (box && text) {
                     const sel = data.student_selection;
                     text.textContent = `Opción ${sel.letter}: ${sel.answer_text || '(sin texto)'}`;
                     box.classList.remove('hidden');
+                }
+                if (data.last_word_used && lastWordBtn && lastWordForm) {
+                    lastWordBtn.disabled = true;
+                    lastWordBtn.textContent = 'Última palabra (usado)';
+                    lastWordBtn.classList.add('btn-disabled', 'opacity-50');
                 }
             }
 
@@ -574,10 +598,13 @@ if (confirmResult?.data?.clasico_round_id) {
                 if (attemptsList) {
                     attemptsList.innerHTML = '';
                     const correct = data.fastest_finger_attempts.filter(a => a.is_correct).sort((a,b) => a.response_time_ms - b.response_time_ms);
+                    const minTime = correct.length > 0 ? correct[0].response_time_ms : null;
+                    const fastestCorrectIds = new Set(correct.filter(c => c.response_time_ms === minTime).map(c => c.player_id));
                     data.fastest_finger_attempts.forEach(a => {
                         const div = document.createElement('div');
-                        div.className = `p-3 rounded-xl text-xs font-bold flex justify-between ${a.is_correct ? 'bg-green-500/20 text-green-400' : 'bg-red-500/10 text-red-400'}`;
-                        div.innerHTML = `<span>${a.name || 'Estudiante'}</span><span>${(a.response_time_ms/1000).toFixed(2)}s ${a.is_correct ? '✓' : '✗'}</span>`;
+                        const isFastestCorrect = a.is_correct && fastestCorrectIds.has(a.player_id);
+                        div.className = `p-3 rounded-xl text-xs font-bold flex justify-between ${isFastestCorrect ? 'bg-amber-500/30 text-amber-100 border-2 border-amber-400' : a.is_correct ? 'bg-green-500/20 text-green-400' : 'bg-red-500/10 text-red-400'}`;
+                        div.innerHTML = `<span>${a.name || 'Estudiante'}${isFastestCorrect ? ' 🏆' : ''}</span><span>${(a.response_time_ms/1000).toFixed(2)}s ${a.is_correct ? '✓' : '✗'}</span>`;
                         attemptsList.appendChild(div);
                     });
                     if (correct.length > 0 && winnerBox && winnerName && winnerPlayerId) {

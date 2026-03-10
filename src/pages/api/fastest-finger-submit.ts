@@ -77,20 +77,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
         });
     }
 
-    // Verificar que el jugador es finalista (solo finalistas pueden participar en Mente más Rápida)
+    // Verificar que el jugador es finalista en Preselección (solo finalistas pueden participar en Mente más Rápida)
     const { data: round } = await supabaseAdmin
         .from("event_rounds")
-        .select("event_id")
+        .select("event_id, events(season_id, program_id, faculty_id, scope)")
         .eq("id", ffRound.event_round_id)
         .single();
-    if (round) {
-        const { data: ep } = await supabaseAdmin
-            .from("event_players")
-            .select("is_finalist")
-            .eq("event_id", round.event_id)
-            .eq("player_id", player.id)
-            .maybeSingle();
-        if (!ep?.is_finalist) {
+    if (round?.events) {
+        const { isFinalistInPreseleccion } = await import("@/lib/preseleccionFinalist");
+        const isFinalist = await isFinalistInPreseleccion(supabaseAdmin, player.id, round.events as Record<string, unknown>);
+        if (!isFinalist) {
             return new Response(JSON.stringify({ error: "Solo los finalistas pueden participar en Mente más Rápida" }), {
                 status: 403,
                 headers: { "Content-Type": "application/json" },

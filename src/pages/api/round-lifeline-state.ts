@@ -26,7 +26,7 @@ export const GET: APIRoute = async ({ url }) => {
         .eq("round_id", rId);
     const used_in_round = [...new Set((roundUsage || []).map((r) => r.lifeline_code))];
 
-    // Metadata para la pregunta actual (ej. 50:50 hide_ids)
+    // Metadata para la pregunta actual (ej. 50:50 hide_ids, last_word)
     let used: Record<string, unknown> = {};
     if (qId) {
         const { data: qUsage } = await supabaseAdmin
@@ -39,7 +39,20 @@ export const GET: APIRoute = async ({ url }) => {
         });
     }
 
-    return new Response(JSON.stringify({ used, used_in_round }), {
+    // verification_result y status para animaciones al verificar (Clásico)
+    let verification_result: Record<string, unknown> | null = null;
+    let round_status: string | null = null;
+    const { data: roundData } = await supabaseAdmin
+        .from("event_rounds")
+        .select("verification_result, status")
+        .eq("id", rId)
+        .single();
+    if (roundData) {
+        if (roundData.verification_result) verification_result = roundData.verification_result as Record<string, unknown>;
+        round_status = roundData.status ?? null;
+    }
+
+    return new Response(JSON.stringify({ used, used_in_round, verification_result, round_status }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
     });

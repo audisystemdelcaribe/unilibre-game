@@ -215,5 +215,25 @@ export const lifelinesActions = {
             if (error) throw new Error(error.message);
             return { success: true, message: "Comodín Ayuda del público activado" };
         }
+    }),
+
+    useLastWord: defineAction({
+        accept: 'form',
+        input: z.object({ round_id: z.string(), question_id: z.string() }),
+        handler: async ({ round_id, question_id }, context) => {
+            await ensureStaff(context);
+            const rId = parseInt(round_id);
+            const qId = parseInt(question_id);
+
+            const { error } = await supabaseAdmin.from('round_lifeline_usage').upsert({
+                round_id: rId,
+                question_id: qId,
+                lifeline_code: 'last_word',
+                metadata: { used: true },
+            }, { onConflict: 'round_id,question_id,lifeline_code' });
+
+            if (error) throw new Error(error.message);
+            return { success: true, message: "Última palabra activada. El estudiante no puede cambiar su respuesta." };
+        }
     })
 };
