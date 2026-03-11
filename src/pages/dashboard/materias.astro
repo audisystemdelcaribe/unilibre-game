@@ -11,7 +11,7 @@ const { data: myProfile } = await Astro.locals.supabase.from('players').select('
 if (myProfile?.role !== 'admin') return Astro.redirect("/dashboard");
 
 // --- LÓGICA DE PAGINACIÓN ---
-const pageSize = 10;
+const pageSize = 25;
 const url = new URL(Astro.request.url);
 const page = parseInt(url.searchParams.get('page') || '1');
 const from = (page - 1) * pageSize;
@@ -61,28 +61,28 @@ const result = Astro.getActionResult(actions.saveSubject) || Astro.getActionResu
             <table class="table table-zebra w-full">
                 <thead class="bg-base-200">
                 <tr class="text-[10px] uppercase tracking-widest text-slate-500 font-bold">
-                    <th class="p-6">Nombre de la Materia</th>
-                    <th class="p-6">Programas / Semestres</th>
-                    <th class="p-6 text-right">Acciones</th>
+                    <th class="py-2 px-4">Nombre de la Materia</th>
+                    <th class="py-2 px-4">Programas / Semestres</th>
+                    <th class="py-2 px-4 text-right">Acciones</th>
                 </tr>
                 </thead>
                 <tbody>
                 {subjects?.map((s) => (
                         <tr class="hover:bg-base-200/50 transition-colors">
-                            <td class="p-6">
-                                <div class="font-bold text-slate-800 text-lg">{s.name}</div>
-                                <div class="text-xs text-slate-400 max-w-xs truncate">{s.description || 'Sin descripción'}</div>
+                            <td class="py-2 px-4 align-middle">
+                                <div class="font-bold text-slate-800 text-sm">{s.name}</div>
+                                <div class="text-[11px] text-slate-400 max-w-xs truncate">{s.description || 'Sin descripción'}</div>
                             </td>
-                            <td class="p-6">
+                            <td class="py-2 px-4 align-middle">
                                 <div class="flex flex-wrap gap-1">
                                     {s.program_subjects.map((ps: any) => (
-                                            <div class="badge badge-outline border-primary/30 text-primary font-bold text-[10px] uppercase gap-1 p-3">
-                                                {ps.programs?.name} <span class="bg-primary text-white px-1.5 rounded-md">{ps.semester}°</span>
-                                            </div>
+                                            <span class="badge badge-outline badge-sm border-primary/30 text-primary font-bold text-[10px] gap-0.5 py-1 px-2">
+                                                {ps.programs?.name} <span class="bg-primary text-white px-1 rounded">{ps.semester}°</span>
+                                            </span>
                                     ))}
                                 </div>
                             </td>
-                            <td class="p-6 text-right">
+                            <td class="py-2 px-4 text-right align-middle">
                                 <div class="flex justify-end gap-2">
                                     <button class="btn btn-ghost btn-sm text-primary btn-edit"
                                             data-id={s.id}
@@ -103,15 +103,21 @@ const result = Astro.getActionResult(actions.saveSubject) || Astro.getActionResu
             </table>
         </div>
 
-        <!-- Paginación se queda igual -->
-        <div class="p-4 bg-base-100 border-t border-base-200 flex justify-between items-center">
-            <span class="text-xs font-bold text-slate-400">Página {page} de {totalPages}</span>
-            <div class="join">
-                <a href={`?page=${page - 1}`} class:list={["join-item btn btn-sm", page <= 1 && "btn-disabled"]}>Anterior</a>
-                <button class="join-item btn btn-sm btn-active">{page}</button>
-                <a href={`?page=${page + 1}`} class:list={["join-item btn btn-sm", page >= totalPages && "btn-disabled"]}>Siguiente</a>
+        <!-- Paginación -->
+        {totalPages > 1 && (
+            <div class="p-4 bg-base-100 border-t border-base-200 flex justify-between items-center flex-wrap gap-2">
+                <span class="text-xs font-bold text-slate-400">Página {page} de {totalPages}</span>
+                <div class="join shadow-sm">
+                    <a href={`?page=${page - 1}`} class:list={["join-item btn btn-sm", page <= 1 && "btn-disabled"]}>« Anterior</a>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                        <a href={`?page=${p}`} class:list={["join-item btn btn-sm", page === p ? "btn-primary text-white" : "btn-ghost"]}>
+                            {p}
+                        </a>
+                    ))}
+                    <a href={`?page=${page + 1}`} class:list={["join-item btn btn-sm", page >= totalPages && "btn-disabled"]}>Siguiente »</a>
+                </div>
             </div>
-        </div>
+        )}
     </div>
 
     <!-- El Modal y el Script se mantienen como el bloque corregido que te daré abajo -->
@@ -278,7 +284,20 @@ const result = Astro.getActionResult(actions.saveSubject) || Astro.getActionResu
         });
     });
 
-    // 4. NUEVO
+    // 4. ELIMINAR
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const id = btn.getAttribute('data-id');
+            const name = btn.getAttribute('data-name');
+            (document.getElementById('modal_delete-input-id') as HTMLInputElement).value = id || '';
+            const msgEl = document.getElementById('modal_delete-message') as HTMLElement;
+            msgEl.textContent = '';
+            msgEl.append('¿Eliminar materia: ', Object.assign(document.createElement('strong'), { textContent: `"${name || ''}"` }), '?');
+            (document.getElementById('modal_delete') as any).showModal();
+        });
+    });
+
+    // 5. NUEVO
     document.getElementById('btn-nueva-materia')?.addEventListener('click', () => {
         form.reset();
         (document.getElementById('f_id') as HTMLInputElement).value = '';

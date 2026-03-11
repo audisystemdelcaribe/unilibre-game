@@ -93,6 +93,7 @@ const { data: allSubjects } = await Astro.locals.supabase.from('subjects').selec
                         <th class="font-black text-xs uppercase whitespace-nowrap">Scope</th>
                         <th class="font-black text-xs uppercase">Opciones de respuesta</th>
                         <th class="font-black text-xs uppercase whitespace-nowrap">Asignatura</th>
+                        <th class="font-black text-xs uppercase whitespace-nowrap">Nivel</th>
                         <th class="font-black text-xs uppercase whitespace-nowrap">Semestre Min–Max</th>
                         <th class="font-black text-xs uppercase text-right w-24">Acciones</th>
                     </tr>
@@ -118,6 +119,9 @@ const { data: allSubjects } = await Astro.locals.supabase.from('subjects').selec
                             </td>
                             <td>
                                 <span class="text-sm font-medium text-slate-600">{q.subjects?.name || '—'}</span>
+                            </td>
+                            <td>
+                                <span class="text-sm font-medium text-slate-600">{q.game_levels?.name || '—'}</span>
                             </td>
                             <td>
                                 <span class="text-sm font-medium text-slate-600">{q.min_semester} – {q.max_semester}</span>
