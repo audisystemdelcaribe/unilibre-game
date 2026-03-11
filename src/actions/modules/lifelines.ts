@@ -1,5 +1,6 @@
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
+import { applyScopeFilter, type EventScope } from '../../lib/questionScope';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
 import { ensureAdmin, ensureStaff } from '../utils';
 
@@ -103,7 +104,7 @@ export const lifelinesActions = {
             const { data: currentQ } = await supabaseAdmin.from('questions').select('level_id').eq('id', qId).single();
             if (!currentQ?.level_id) throw new Error("Pregunta no encontrada");
 
-            const { data: round } = await supabaseAdmin.from('event_rounds').select('event_id, events(program_id, game_mode_id)').eq('id', rId).single();
+            const { data: round } = await supabaseAdmin.from('event_rounds').select('event_id, events(scope, program_id, faculty_id, game_mode_id)').eq('id', rId).single();
             if (!round) throw new Error("Ronda no encontrada");
 
             const { data: cambiarUsed } = await supabaseAdmin
@@ -131,10 +132,8 @@ export const lifelinesActions = {
                 }
             }
 
-            const programId = (round.events as { program_id?: number })?.program_id;
             let query = supabaseAdmin.from('questions').select('id').eq('level_id', currentQ.level_id).eq('active', true);
-            if (programId != null) query = query.or(`program_id.eq.${programId},scope.eq.global`);
-            else query = query.eq('scope', 'global');
+            query = applyScopeFilter(query, round.events as EventScope);
             if (playerSemester != null) query = query.lte('min_semester', playerSemester).gte('max_semester', playerSemester);
             const { data: available } = await query;
             const availableIds = (available || []).map((q: { id: number }) => q.id).filter((id: number) => !usedIds.includes(id));

@@ -1,6 +1,7 @@
 // src/actions/modules/live_sessions.ts
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
+import { applyScopeFilter, type EventScope } from '../../lib/questionScope';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
 import { ensureStaff } from '../utils';
 
@@ -347,7 +348,7 @@ export const liveSessionsActions = {
             // 1. Obtener datos de la ronda y el programa
             const { data: round } = await supabaseAdmin
                 .from('event_rounds')
-                .select('*, events(program_id, game_mode_id)')
+                .select('*, events(scope, program_id, faculty_id, game_mode_id)')
                 .eq('id', parseInt(round_id))
                 .single();
 
@@ -411,18 +412,12 @@ export const liveSessionsActions = {
                 .maybeSingle();
             const firstLevelId = firstLevel?.id ?? 1;
 
-            const programId = round.events?.program_id;
             let query = supabaseAdmin
                 .from('questions')
                 .select('id')
                 .eq('level_id', firstLevelId)
                 .eq('active', true);
-
-            if (programId != null) {
-                query = query.or(`program_id.eq.${programId},scope.eq.global`);
-            } else {
-                query = query.eq('scope', 'global');
-            }
+            query = applyScopeFilter(query, round.events as EventScope);
 
             // Silla Caliente: solo preguntas cuyo rango [min_semester, max_semester] incluya el semestre del estudiante
             if (playerSemester != null) {
@@ -496,7 +491,7 @@ export const liveSessionsActions = {
             const { data: correctAns } = await supabaseAdmin.from('answers').select('id').eq('question_id', round.current_question_id).eq('is_correct', true).limit(1).maybeSingle();
             const correctAnswerId = correctAns?.id ?? sel.answer_id;
             const verificationResult = { question_id: round.current_question_id, is_correct: correct, correct_answer_id: correctAnswerId, student_answer_id: sel.answer_id } as const;
-            const { data: roundFull } = await supabaseAdmin.from('event_rounds').select('*, events(program_id, season_id, game_mode_id)').eq('id', rId).single();
+            const { data: roundFull } = await supabaseAdmin.from('event_rounds').select('*, events(scope, program_id, faculty_id, season_id, game_mode_id)').eq('id', rId).single();
             if (!roundFull) throw new Error("Ronda no encontrada");
             const isPreseleccion = (roundFull.events as { game_mode_id?: number })?.game_mode_id === 1;
 
@@ -512,7 +507,6 @@ export const liveSessionsActions = {
                 const currentOrder = level?.difficulty_order ?? 1;
                 const { data: nextLevel } = await supabaseAdmin.from('game_levels').select('id').eq('difficulty_order', currentOrder + 1).maybeSingle();
                 const nextLevelId = nextLevel?.id;
-                const programId = (roundFull.events as any)?.program_id;
                 let usedIds: number[] = [];
                 const { data: shown } = await supabaseAdmin.from('round_questions_shown').select('question_id').eq('round_id', rId);
                 if (shown?.length) usedIds = shown.map((s: any) => s.question_id).filter(Boolean);
@@ -536,8 +530,7 @@ export const liveSessionsActions = {
                 const playerSemester = plSem?.semester ?? null;
 
                 let query = supabaseAdmin.from('questions').select('id').eq('level_id', nextLevelId).eq('active', true);
-                if (programId != null) query = query.or(`program_id.eq.${programId},scope.eq.global`);
-                else query = query.eq('scope', 'global');
+                query = applyScopeFilter(query, roundFull.events as EventScope);
                 if (playerSemester != null) query = query.lte('min_semester', playerSemester).gte('max_semester', playerSemester);
                 const { data: available } = await query;
                 const availableIds = (available || []).map((q: any) => q.id).filter((id: number) => !usedIds.includes(id));
@@ -607,7 +600,7 @@ export const liveSessionsActions = {
 
             const { data: round } = await supabaseAdmin
                 .from('event_rounds')
-                .select('*, events(program_id, season_id, game_mode_id)')
+                .select('*, events(scope, program_id, faculty_id, season_id, game_mode_id)')
                 .eq('id', rId)
                 .single();
 
@@ -686,7 +679,6 @@ export const liveSessionsActions = {
                     .eq('difficulty_order', currentOrder + 1)
                     .maybeSingle();
                 const nextLevelId = nextLevel?.id;
-                const programId = (round.events as any)?.program_id;
 
                 let usedIds: number[] = [];
                 const { data: shown } = await supabaseAdmin.from('round_questions_shown').select('question_id').eq('round_id', rId);
@@ -718,8 +710,7 @@ export const liveSessionsActions = {
                 const playerSemester = plSem?.semester ?? null;
 
                 let query = supabaseAdmin.from('questions').select('id').eq('level_id', nextLevelId).eq('active', true);
-                if (programId != null) query = query.or(`program_id.eq.${programId},scope.eq.global`);
-                else query = query.eq('scope', 'global');
+                query = applyScopeFilter(query, round.events as EventScope);
                 if (playerSemester != null) query = query.lte('min_semester', playerSemester).gte('max_semester', playerSemester);
                 const { data: available } = await query;
 
