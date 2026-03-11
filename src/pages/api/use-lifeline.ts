@@ -44,9 +44,42 @@ export const POST: APIRoute = async ({ request, locals }) => {
         });
     }
 
-    const rId = parseInt(round_id);
-    const qId = parseInt(question_id);
+    const rId = parseInt(round_id, 10);
+    const qId = parseInt(question_id, 10);
+    if (isNaN(rId) || isNaN(qId)) {
+        return new Response(JSON.stringify({ error: "round_id y question_id deben ser números válidos" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
     const code = lifeline_code.toLowerCase();
+    if (code !== "llamada" && code !== "publico") {
+        return new Response(JSON.stringify({ error: "Comodín no soportado por esta API" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    const { data: round } = await supabaseAdmin
+        .from("event_rounds")
+        .select("id, event_id, current_question_id")
+        .eq("id", rId)
+        .single();
+
+    if (!round) {
+        return new Response(JSON.stringify({ error: "Ronda no encontrada" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    if (Number(round.current_question_id) !== qId) {
+        return new Response(JSON.stringify({ error: "La pregunta no corresponde a la ronda activa" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
 
     const { data: existing } = await supabaseAdmin
         .from("round_lifeline_usage")

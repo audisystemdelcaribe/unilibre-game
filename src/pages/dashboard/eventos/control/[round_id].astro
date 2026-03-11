@@ -507,11 +507,29 @@ if (confirmResult?.data?.clasico_round_id) {
             if (!data.votes) return;
             const letters = data.letters || ['A','B','C','D'];
             const total = data.total || 1;
-            chart.innerHTML = letters.map(function(l) {
+            chart.replaceChildren();
+            letters.forEach(function(l) {
                 const v = data.votes[l] || 0;
                 const pct = total > 0 ? Math.round((v/total)*100) : 0;
-                return '<div class="flex items-center gap-2"><span class="w-6 font-black">'+l+'</span><div class="flex-1 h-8 bg-zinc-800 rounded-lg overflow-hidden"><div class="h-full bg-violet-500 rounded-lg transition-all" style="width:'+pct+'%"></div></div><span class="w-12 text-right font-bold">'+v+' ('+pct+'%)</span></div>';
-            }).join('');
+                const row = document.createElement('div');
+                row.className = 'flex items-center gap-2';
+                const letterSpan = document.createElement('span');
+                letterSpan.className = 'w-6 font-black';
+                letterSpan.textContent = String(l);
+                const barWrap = document.createElement('div');
+                barWrap.className = 'flex-1 h-8 bg-zinc-800 rounded-lg overflow-hidden';
+                const bar = document.createElement('div');
+                bar.className = 'h-full bg-violet-500 rounded-lg transition-all';
+                bar.style.width = pct + '%';
+                const countSpan = document.createElement('span');
+                countSpan.className = 'w-12 text-right font-bold';
+                countSpan.textContent = v + ' (' + pct + '%)';
+                barWrap.appendChild(bar);
+                row.appendChild(letterSpan);
+                row.appendChild(barWrap);
+                row.appendChild(countSpan);
+                chart.appendChild(row);
+            });
         } catch (_) {}
     }
 
@@ -603,7 +621,12 @@ if (confirmResult?.data?.clasico_round_id) {
                         const div = document.createElement('div');
                         const isFastestCorrect = a.is_correct && fastestCorrectIds.has(a.player_id);
                         div.className = `p-3 rounded-xl text-xs font-bold flex justify-between ${isFastestCorrect ? 'bg-amber-500/30 text-amber-100 border-2 border-amber-400' : a.is_correct ? 'bg-green-500/20 text-green-400' : 'bg-red-500/10 text-red-400'}`;
-                        div.innerHTML = `<span>${a.name || 'Estudiante'}${isFastestCorrect ? ' 🏆' : ''}</span><span>${(a.response_time_ms/1000).toFixed(2)}s ${a.is_correct ? '✓' : '✗'}</span>`;
+                        const s1 = document.createElement('span');
+                        s1.textContent = (a.name || 'Estudiante') + (isFastestCorrect ? ' 🏆' : '');
+                        const s2 = document.createElement('span');
+                        s2.textContent = (a.response_time_ms/1000).toFixed(2) + 's ' + (a.is_correct ? '✓' : '✗');
+                        div.appendChild(s1);
+                        div.appendChild(s2);
                         attemptsList.appendChild(div);
                     });
                     if (correct.length > 0 && winnerBox && winnerName && winnerPlayerId) {

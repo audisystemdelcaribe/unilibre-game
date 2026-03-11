@@ -10,7 +10,7 @@ export default defineConfig({
     webAnalytics: { enabled: true } 
   }),
   security: {
-    checkOrigin: false,
+    checkOrigin: true,
   },
   integrations: [
     icon()

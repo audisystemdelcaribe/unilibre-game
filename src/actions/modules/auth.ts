@@ -10,12 +10,30 @@ export const authActions = {
                 message: "Debe ser un correo institucional (@unilibre.edu.co)"
             }),
             password: z.string().min(6, "La contraseña debe tener al menos 6 caracteres"),
-            full_name: z.string().min(3, "Nombre muy corto"),
-            program_id: z.string(),
-            semester: z.string(),
+            full_name: z.string().min(3, "Nombre muy corto").max(200, "Nombre muy largo"),
+            program_id: z.string().min(1, "Selecciona un programa"),
+            semester: z.string().refine(s => {
+                const n = parseInt(s, 10);
+                return !isNaN(n) && n >= 1 && n <= 12;
+            }, { message: "El semestre debe estar entre 1 y 12" }),
         }),
         handler: async (input, context) => {
             const { email, password, full_name, program_id, semester } = input;
+
+            const progId = parseInt(program_id, 10);
+            const sem = parseInt(semester, 10);
+            if (isNaN(progId) || isNaN(sem)) {
+                throw new Error("Datos de programa o semestre inválidos");
+            }
+
+            const { data: programExists } = await context.locals.supabase
+                .from("programs")
+                .select("id")
+                .eq("id", progId)
+                .single();
+            if (!programExists) {
+                throw new Error("El programa seleccionado no existe");
+            }
 
             // Intentar registro en Supabase Auth
             const { data, error } = await context.locals.supabase.auth.signUp({
@@ -24,8 +42,8 @@ export const authActions = {
                 options: {
                     data: {
                         full_name: full_name,
-                        program_id: parseInt(program_id),
-                        semester: parseInt(semester),
+                        program_id: progId,
+                        semester: sem,
                         role: 'player' // Por defecto son estudiantes
                     }
                 }

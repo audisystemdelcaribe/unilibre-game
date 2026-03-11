@@ -1,25 +1,32 @@
 ---
 import "../styles/global.css";
+import { checkLoginRateLimit, recordLoginFailure } from "../lib/rateLimit";
 
 let errorMessage = "";
 
 // Lógica de servidor para procesar el formulario
 if (Astro.request.method === "POST") {
 	try {
-		const formData = await Astro.request.formData();
-		const email = formData.get("email")?.toString();
-		const password = formData.get("password")?.toString();
+		const { allowed, retryAfter } = checkLoginRateLimit(Astro.request);
+		if (!allowed) {
+			errorMessage = `Demasiados intentos fallidos. Espera ${Math.ceil((retryAfter ?? 0) / 60)} minutos e intenta de nuevo.`;
+		} else {
+			const formData = await Astro.request.formData();
+			const email = formData.get("email")?.toString();
+			const password = formData.get("password")?.toString();
 
-		if (email && password) {
-			const { error } = await Astro.locals.supabase.auth.signInWithPassword({
-				email,
-				password,
-			});
+			if (email && password) {
+				const { error } = await Astro.locals.supabase.auth.signInWithPassword({
+					email,
+					password,
+				});
 
-			if (error) {
-				errorMessage = "Correo o contraseña incorrectos";
-			} else {
-				return Astro.redirect("/dashboard");
+				if (error) {
+					recordLoginFailure(Astro.request);
+					errorMessage = "Correo o contraseña incorrectos";
+				} else {
+					return Astro.redirect("/dashboard");
+				}
 			}
 		}
 	} catch (e) {
