@@ -25,7 +25,7 @@ const { data: programs } = await Astro.locals.supabase
     .order('name');
 
 // Obtener finalistas si hay temporada seleccionada
-let finalistsByProgram: { programId: number; programName: string; finalists: { player_id: number; name: string; score: number; final_rank: number; eventName: string }[] }[] = [];
+let finalistsByProgram: { programId: number; programName: string; finalists: { player_id: number; name: string; score: number; final_rank: number; eventName: string; classroom_group: string; semester: number | null; email: string }[] }[] = [];
 
 if (seasonId) {
     const { data: seasonEvents } = await supabaseAdmin
@@ -40,8 +40,8 @@ if (seasonId) {
         const { data: eps } = await supabaseAdmin
             .from('event_players')
             .select(`
-                player_id, score, final_rank, event_id,
-                players(id, name, program_id, programs(id, name))
+                player_id, score, final_rank, event_id, classroom_group_id,
+                players(id, name, program_id, semester, auth_user_id, programs(id, name))
             `)
             .eq('is_finalist', true)
             .in('event_id', eventIds);
@@ -51,7 +51,8 @@ if (seasonId) {
             score: number;
             final_rank: number;
             event_id: number;
-            players: { id: number; name: string; program_id: number | null; programs: { id: number; name: string } | null } | null;
+            classroom_group_id: string | null;
+            players: { id: number; name: string; program_id: number | null; semester: number | null; auth_user_id: string | null; programs: { id: number; name: string } | null } | null;
         };
 
         let items = (eps || []) as EP[];
@@ -60,12 +61,23 @@ if (seasonId) {
             items = items.filter((ep) => ep.players?.program_id === programId);
         }
 
+        // Obtener emails de auth (en paralelo para los auth_user_id únicos)
+        const authIds = [...new Set(items.map((ep) => ep.players?.auth_user_id).filter(Boolean))] as string[];
+        const emailMap: Record<string, string> = {};
+        await Promise.all(
+            authIds.map(async (uid) => {
+                const { data } = await supabaseAdmin.auth.admin.getUserById(uid);
+                if (data?.user?.email) emailMap[uid] = data.user.email;
+            })
+        );
+
         // Agrupar por programa
-        const byProgram = new Map<number, { programName: string; list: { player_id: number; name: string; score: number; final_rank: number; eventName: string }[] }>();
+        const byProgram = new Map<number, { programName: string; list: { player_id: number; name: string; score: number; final_rank: number; eventName: string; classroom_group: string; semester: number | null; email: string }[] }>();
 
         for (const ep of items) {
             const progId = ep.players?.program_id ?? -1;
             const progName = ep.players?.programs?.name ?? 'Sin programa';
+            const authId = ep.players?.auth_user_id ?? '';
 
             if (!byProgram.has(progId)) {
                 byProgram.set(progId, { programName: progName, list: [] });
@@ -76,6 +88,9 @@ if (seasonId) {
                 score: ep.score ?? 0,
                 final_rank: ep.final_rank ?? 1,
                 eventName: eventMap.get(ep.event_id) ?? '—',
+                classroom_group: ep.classroom_group_id ?? '—',
+                semester: ep.players?.semester ?? null,
+                email: emailMap[authId] ?? '—',
             });
         }
 
@@ -154,6 +169,9 @@ if (seasonId) {
                                 <tr class="bg-slate-50/50">
                                     <th class="font-black text-[10px] uppercase text-slate-500">#</th>
                                     <th class="font-black text-[10px] uppercase text-slate-500">Estudiante</th>
+                                    <th class="font-black text-[10px] uppercase text-slate-500">Grupo</th>
+                                    <th class="font-black text-[10px] uppercase text-slate-500">Semestre</th>
+                                    <th class="font-black text-[10px] uppercase text-slate-500">Correo</th>
                                     <th class="font-black text-[10px] uppercase text-slate-500">Puntaje</th>
                                     <th class="font-black text-[10px] uppercase text-slate-500">Evento</th>
                                 </tr>
@@ -170,6 +188,9 @@ if (seasonId) {
                                                 <span class="font-bold text-slate-800">{f.name}</span>
                                             </div>
                                         </td>
+                                        <td class="text-sm text-slate-600">{f.classroom_group}</td>
+                                        <td class="text-sm text-slate-600">{f.semester ?? '—'}</td>
+                                        <td class="text-sm text-slate-600">{f.email}</td>
                                         <td class="font-bold text-slate-700">{f.score?.toLocaleString('es-CO') ?? '—'}</td>
                                         <td class="text-sm text-slate-600">{f.eventName}</td>
                                     </tr>
