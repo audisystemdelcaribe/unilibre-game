@@ -109,23 +109,37 @@ export const GET: APIRoute = async ({ locals, url }) => {
         result.last_word_used = !!lw;
     }
 
-    // Conectados: intentar game_sessions (round_id) y event_players (event_id+classroom_group_id)
+    // Conectados: game_sessions (round_id) + event_players (event_id + classroom_group_id)
     const roundIdNum = parseInt(roundId, 10);
     const playerIds = new Set<number>();
+    const groupId = String(round.classroom_group_id ?? "").trim();
 
-    const { data: sessions } = await supabaseAdmin
-        .from("game_sessions")
-        .select("player_id")
-        .eq("round_id", roundIdNum)
-        .eq("finished", false);
-    if (sessions) sessions.forEach((s) => s.player_id && playerIds.add(s.player_id));
+    // 1. game_sessions: quienes tienen sesión activa en esta ronda
+    try {
+        const { data: sessions } = await supabaseAdmin
+            .from("game_sessions")
+            .select("player_id")
+            .eq("round_id", roundIdNum)
+            .eq("finished", false);
+        if (sessions) sessions.forEach((s) => s.player_id && playerIds.add(s.player_id));
+    } catch {
+        // Si game_sessions no tiene round_id o falla, usamos solo event_players
+    }
 
+    // 2. event_players: quienes se unieron al evento con este grupo
     const { data: eventPlayers } = await supabaseAdmin
         .from("event_players")
-        .select("player_id")
-        .eq("event_id", round.event_id)
-        .eq("classroom_group_id", round.classroom_group_id ?? "");
-    if (eventPlayers) eventPlayers.forEach((ep) => ep.player_id && playerIds.add(ep.player_id));
+        .select("player_id, classroom_group_id")
+        .eq("event_id", round.event_id);
+
+    if (eventPlayers) {
+        eventPlayers.forEach((ep) => {
+            const epGroup = String(ep.classroom_group_id ?? "").trim();
+            if (groupId ? epGroup === groupId : epGroup === "" || epGroup === groupId) {
+                if (ep.player_id) playerIds.add(ep.player_id);
+            }
+        });
+    }
 
     if (playerIds.size > 0) {
         const { data: players } = await supabaseAdmin
