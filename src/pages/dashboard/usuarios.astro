@@ -74,6 +74,7 @@ const result = Astro.getActionResult(actions.updateUserRole)
                                     "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border",
                                     p.role === 'admin' ? "bg-red-50 text-red-600 border-red-100" : 
                                     p.role === 'docente' ? "bg-blue-50 text-blue-600 border-blue-100" : 
+                                    p.role === 'preseleccion' ? "bg-amber-50 text-amber-600 border-amber-100" :
                                     "bg-emerald-50 text-emerald-600 border-emerald-100"
                                 ]}>
                                     {p.role}
@@ -148,6 +149,14 @@ const result = Astro.getActionResult(actions.updateUserRole)
                         <div>
                             <p class="font-black uppercase text-xs text-slate-900">Estudiante (Player)</p>
                             <p class="text-[10px] text-slate-500 font-medium italic">Acceso estándar al juego y perfil.</p>
+                        </div>
+                    </label>
+
+                    <label class="flex items-center gap-4 p-5 rounded-3xl border-2 border-slate-100 hover:border-blue-100 cursor-pointer transition-all has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/30 group">
+                        <input type="radio" name="role" value="preseleccion" class="radio radio-primary" />
+                        <div>
+                            <p class="font-black uppercase text-xs text-slate-900">Preselección</p>
+                            <p class="text-[10px] text-slate-500 font-medium italic">Solo puede realizar la Preselección (no Mente más Rápida ni Silla Caliente).</p>
                         </div>
                     </label>
 

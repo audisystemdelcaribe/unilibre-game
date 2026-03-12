@@ -62,7 +62,7 @@ export const usersActions = {
         accept: 'form',
         input: z.object({
             player_id: z.string(),
-            role: z.enum(['admin', 'docente', 'player']),
+            role: z.enum(['admin', 'docente', 'player', 'preseleccion']),
         }),
         handler: async ({ player_id, role }, context) => {
             await ensureAdmin(context);

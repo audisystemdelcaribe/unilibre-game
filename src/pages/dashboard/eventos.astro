@@ -9,7 +9,7 @@ import { getGameModeBadgeClass } from "@/lib/utils";
 const user = await Astro.locals.getUser();
 if (!user) return Astro.redirect("/");
 const { data: profile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
-if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redirect("/dashboard");
+if (profile?.role !== 'admin' && profile?.role !== 'docente' && profile?.role !== 'preseleccion') return Astro.redirect("/dashboard");
 
 // Capturamos el resultado para el Toast global
 const result = Astro.getActionResult(actions.saveEvent) || Astro.getActionResult(actions.deleteEvent);
@@ -20,12 +20,15 @@ const page = Math.max(1, parseInt(Astro.url.searchParams.get('page') || '1') || 
 const from = (page - 1) * PAGE_SIZE;
 const to = from + PAGE_SIZE - 1;
 
-// 2. Cargar Eventos con paginación
-const { data: events, count: totalCount } = await Astro.locals.supabase
+// 2. Cargar Eventos con paginación (preseleccion solo ve Preselección)
+let eventsQuery = Astro.locals.supabase
     .from('events')
     .select('*, seasons(name), game_modes(name), faculties(name), programs(name)', { count: 'exact' })
-    .order('event_date', { ascending: false })
-    .range(from, to);
+    .order('event_date', { ascending: false });
+if (profile?.role === 'preseleccion') {
+    eventsQuery = eventsQuery.eq('game_mode_id', 1);
+}
+const { data: events, count: totalCount } = await eventsQuery.range(from, to);
 
 const totalPages = Math.max(1, Math.ceil((totalCount ?? 0) / PAGE_SIZE));
 const hasPrev = page > 1;
@@ -52,7 +55,9 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
             <h2 class="text-4xl font-black italic tracking-tighter uppercase text-slate-800">Eventos en Vivo</h2>
             <p class="text-slate-500 font-medium font-mono text-xs">GESTIÓN DE SALAS DE COMPETENCIA</p>
         </div>
-        <button id="btn-nuevo" class="btn btn-primary text-white font-bold px-8 shadow-lg">+ Crear Nueva Sala</button>
+        {profile?.role !== 'preseleccion' && (
+            <button id="btn-nuevo" class="btn btn-primary text-white font-bold px-8 shadow-lg">+ Crear Nueva Sala</button>
+        )}
     </div>
 
     <!-- TABLA DE EVENTOS -->
@@ -86,6 +91,8 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
                         <td class="text-sm font-medium text-slate-600">{e.seasons?.name || '—'}</td>
                         <td class="text-right">
                             <div class="flex items-center justify-end gap-1">
+                                {profile?.role !== 'preseleccion' && (
+                                <>
                                 <button class="btn btn-sm btn-circle btn-ghost text-primary btn-edit"
                                         data-id={e.id} data-name={e.name} data-desc={e.description || ''}
                                         data-date={e.event_date} data-season={e.season_id} data-mode={e.game_mode_id}
@@ -96,6 +103,8 @@ const { data: programs } = await Astro.locals.supabase.from('programs').select('
                                 <button class="btn btn-sm btn-circle btn-ghost text-error btn-delete" data-id={e.id} data-name={e.name} title="Eliminar">
                                     <Icon name="lucide:trash-2" size={16} />
                                 </button>
+                                </>
+                                )}
                                 <a href={`/dashboard/eventos/${e.id}/lanzar`} class="btn btn-primary btn-sm text-white font-bold uppercase text-[10px] px-4">
                                     Lanzar
                                 </a>

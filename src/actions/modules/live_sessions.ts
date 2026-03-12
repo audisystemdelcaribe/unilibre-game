@@ -3,7 +3,7 @@ import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
 import { applyScopeFilter, type EventScope } from '../../lib/questionScope';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
-import { ensureStaff } from '../utils';
+import { ensureStaff, ensureStaffFull } from '../utils';
 
 export const liveSessionsActions = {
     openClassroomSession: defineAction({
@@ -18,6 +18,13 @@ export const liveSessionsActions = {
             const { event_id, classroom_group_id } = input;
             const { data: evt } = await supabaseAdmin.from('events').select('game_mode_id').eq('id', parseInt(event_id)).single();
             const gm = evt?.game_mode_id;
+
+            // Rol preseleccion: solo puede abrir sesiones de Preselección (game_mode_id = 1)
+            const user = await context.locals.getUser();
+            const { data: myProfile } = await context.locals.supabase.from('players').select('role').eq('auth_user_id', user?.id).single();
+            if (myProfile?.role === 'preseleccion' && gm !== 1) {
+                throw new Error("Tu rol solo permite realizar Preselección. No puedes abrir Mente más Rápida ni Silla Caliente.");
+            }
             const groupId = gm === 3 ? 'Gran Final' : gm === 2 ? 'Silla Caliente' : (classroom_group_id?.trim() || '');
             if (!groupId || groupId.length < 2) throw new Error("El nombre del grupo es obligatorio");
 
@@ -105,7 +112,7 @@ export const liveSessionsActions = {
                 if (!isFinalist) throw new Error("Solo los finalistas (ganadores de preselección) pueden participar en Mente más Rápida.");
             }
 
-            // 2c. Silla Caliente (Clásico=2): ganador juega; otros con PIN van como público
+            // 2c. Silla Caliente (Clásico=2): solo el ganador puede entrar con el PIN
             if (gameModeId === 2) {
                 const { data: ac } = await supabaseAdmin
                     .from('active_contestants')
@@ -113,7 +120,7 @@ export const liveSessionsActions = {
                     .eq('event_id', round.event_id)
                     .maybeSingle();
                 if (!ac || ac.player_id !== player.id) {
-                    return { success: true, round_id: round.id, audience_only: true };
+                    throw new Error("Solo el ganador de Mente más Rápida puede ingresar con este PIN. El público debe usar 'Ayudar a participante'.");
                 }
             }
 
@@ -183,6 +190,9 @@ export const liveSessionsActions = {
                 .eq('id', rId)
                 .single();
             if (!r) throw new Error("Ronda no encontrada");
+            const rGm = (r.events as { game_mode_id?: number })?.game_mode_id;
+            const { data: np } = await context.locals.supabase.from('players').select('role').eq('auth_user_id', (await context.locals.getUser())?.id).single();
+            if (np?.role === 'preseleccion' && rGm !== 1) throw new Error("Tu rol solo permite Preselección.");
             if (r.status === 'fastest_finger' || r.status === 'finished') {
                 throw new Error("No se puede lanzar pregunta en esta ronda. Confirma al ganador de Mente más Rápida para continuar.");
             }
@@ -337,7 +347,62 @@ export const liveSessionsActions = {
             return resp;
         }
     }),
-    // src/actions/modules/live_sessions.ts
+
+    /** Silla Caliente: el participante se retira y se lleva lo acumulado. Deja constancia en BD (stage=retirado, score). */
+    withdrawFromSillaCaliente: defineAction({
+        accept: 'form',
+        input: z.object({ round_id: z.string() }),
+        handler: async ({ round_id }, context) => {
+            const user = await context.locals.getUser();
+            if (!user) throw new Error("Debes iniciar sesión");
+
+            const rId = parseInt(round_id);
+            if (!Number.isFinite(rId)) throw new Error("Ronda inválida");
+
+            const { data: player } = await supabaseAdmin.from('players').select('id').eq('auth_user_id', user.id).single();
+            if (!player) throw new Error("Jugador no encontrado");
+
+            const { data: round } = await supabaseAdmin
+                .from('event_rounds')
+                .select('id, event_id, classroom_group_id, status, events(game_mode_id)')
+                .eq('id', rId)
+                .single();
+            if (!round) throw new Error("Ronda no encontrada");
+            if ((round.events as { game_mode_id?: number })?.game_mode_id !== 2) {
+                throw new Error("Solo puedes retirarte en Silla Caliente");
+            }
+            if (round.status === 'finished') {
+                throw new Error("Esta ronda ya terminó");
+            }
+
+            const { data: ac } = await supabaseAdmin.from('active_contestants').select('player_id').eq('event_id', round.event_id).maybeSingle();
+            if (!ac || ac.player_id !== player.id) {
+                throw new Error("Solo el participante que está en la silla puede retirarse");
+            }
+
+            const { data: gs } = await supabaseAdmin.from('game_sessions').select('id, score').eq('player_id', player.id).eq('event_id', round.event_id).eq('finished', false).maybeSingle();
+            const { data: ep } = await supabaseAdmin.from('event_players').select('score').eq('event_id', round.event_id).eq('player_id', player.id).eq('classroom_group_id', round.classroom_group_id ?? '').maybeSingle();
+            const accumulatedScore = gs?.score ?? ep?.score ?? 0;
+
+            if (gs) {
+                await supabaseAdmin.from('game_sessions').update({ score: accumulatedScore, finished: true }).eq('id', gs.id);
+            }
+            await supabaseAdmin.from('event_players').update({ score: accumulatedScore, stage: 'retirado' })
+                .eq('event_id', round.event_id).eq('player_id', player.id).eq('classroom_group_id', round.classroom_group_id ?? '');
+
+            await supabaseAdmin.from('active_contestants').delete().eq('event_id', round.event_id).eq('player_id', player.id);
+
+            const { data: evt } = await supabaseAdmin.from('event_rounds').select('events(season_id)').eq('id', rId).single();
+            const seasonId = (evt?.events as { season_id?: number })?.season_id;
+            if (seasonId && accumulatedScore > 0) {
+                const { count } = await supabaseAdmin.from('season_rankings').select('*', { count: 'exact', head: true }).eq('season_id', seasonId).gt('score', accumulatedScore);
+                await supabaseAdmin.from('season_rankings').insert({ season_id: seasonId, player_id: player.id, score: accumulatedScore, position: (count ?? 0) + 1 });
+            }
+
+            const formatted = accumulatedScore.toLocaleString('es-CO');
+            return { success: true, score: accumulatedScore, message: `Te retiraste con $${formatted} acumulados.` };
+        }
+    }),
 
     launchRandomQuestion: defineAction({
         accept: 'form',
@@ -355,6 +420,10 @@ export const liveSessionsActions = {
             if (!round) throw new Error("Ronda no encontrada");
 
             const gameModeId = (round.events as { game_mode_id?: number })?.game_mode_id;
+            const { data: myProfile } = await context.locals.supabase.from('players').select('role').eq('auth_user_id', (await context.locals.getUser())?.id).single();
+            if (myProfile?.role === 'preseleccion' && gameModeId !== 1) {
+                throw new Error("Tu rol solo permite Preselección.");
+            }
             if (gameModeId === 3) {
                 throw new Error("En Mente más Rápida no se lanzan preguntas. Usa 'Confirmar ganador' para pasar a Silla Caliente.");
             }
@@ -493,7 +562,10 @@ export const liveSessionsActions = {
             const verificationResult = { question_id: round.current_question_id, is_correct: correct, correct_answer_id: correctAnswerId, student_answer_id: sel.answer_id } as const;
             const { data: roundFull } = await supabaseAdmin.from('event_rounds').select('*, events(scope, program_id, faculty_id, season_id, game_mode_id)').eq('id', rId).single();
             if (!roundFull) throw new Error("Ronda no encontrada");
-            const isPreseleccion = (roundFull.events as { game_mode_id?: number })?.game_mode_id === 1;
+            const gm = (roundFull.events as { game_mode_id?: number })?.game_mode_id;
+            const isPreseleccion = gm === 1;
+            const { data: vp } = await context.locals.supabase.from('players').select('role').eq('auth_user_id', (await context.locals.getUser())?.id).single();
+            if (vp?.role === 'preseleccion' && gm !== 1) throw new Error("Tu rol solo permite Preselección.");
 
             const { data: question } = await supabaseAdmin.from('questions').select('level_id').eq('id', round.current_question_id).single();
             const { data: level } = await supabaseAdmin.from('game_levels').select('id, money_value, points, difficulty_order').eq('id', question?.level_id || 1).single();
@@ -593,7 +665,7 @@ export const liveSessionsActions = {
             is_correct: z.enum(['true', 'false']),
         }),
         handler: async ({ round_id, is_correct }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Clásico: preseleccion no puede
 
             const rId = parseInt(round_id);
             const correct = is_correct === 'true';
@@ -825,7 +897,11 @@ export const liveSessionsActions = {
             if (!round) throw new Error("Ronda no encontrada");
 
             const evt = round.events as { game_mode_id?: number; season_id?: number } | null;
-            const isClasico = evt?.game_mode_id === 2;
+            const gameModeId = evt?.game_mode_id;
+            const { data: fp } = await context.locals.supabase.from('players').select('role').eq('auth_user_id', (await context.locals.getUser())?.id).single();
+            if (fp?.role === 'preseleccion' && gameModeId !== 1) throw new Error("Tu rol solo permite Preselección.");
+
+            const isClasico = gameModeId === 2;
 
             // Si es Clásico (Silla Caliente): marcar game_sessions y event_players del participante activo
             if (isClasico) {

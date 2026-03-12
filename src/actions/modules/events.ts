@@ -1,7 +1,7 @@
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
-import { ensureStaff } from '../utils';
+import { ensureStaffFull } from '../utils';
 
 export const eventsActions = {
     saveEvent: defineAction({
@@ -19,7 +19,7 @@ export const eventsActions = {
 
         }),
         handler: async (input, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Crear/editar eventos: preseleccion no puede
             const { id, name, description, event_date, season_id, game_mode_id, scope, faculty_id, program_id } = input;
 
             let final_f_id = null;
@@ -60,7 +60,7 @@ export const eventsActions = {
         accept: 'form',
         input: z.object({ id: z.string() }),
         handler: async ({ id }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Crear/editar eventos: preseleccion no puede
             const { error } = await supabaseAdmin.from('events').delete().eq('id', parseInt(id));
             if (error) throw new Error(error.message);
             return { success: true, message: "Evento eliminado" };

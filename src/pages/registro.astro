@@ -38,7 +38,9 @@ if (result?.error) toastInfo = { type: 'error', message: result.error.message };
         <p class="text-zinc-500 text-sm mt-2 uppercase font-bold tracking-widest">Únete a la carrera del saber</p>
     </div>
 
-    <form method="POST" action={actions.registerPlayer} class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl space-y-5">
+    <form method="POST" action={actions.registerPlayer} id="form-registro" class="bg-zinc-900 border border-zinc-800 p-8 rounded-3xl shadow-2xl space-y-5">
+
+        <div id="form-error" class="hidden p-4 bg-red-500/20 border border-red-500/50 rounded-2xl text-red-400 text-sm font-bold"></div>
 
         <div class="form-control">
             <label class="label"><span class="label-text font-bold text-zinc-400 uppercase text-[10px]">Nombre Completo</span></label>
@@ -82,7 +84,66 @@ if (result?.error) toastInfo = { type: 'error', message: result.error.message };
 </div>
 
 <script is:inline>
-    // Función de desbloqueo de botones por si falla el registro
+    document.getElementById('form-registro')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const form = this;
+        const formData = new FormData(form);
+        const btn = form.querySelector('button[type="submit"]');
+        const errorEl = document.getElementById('form-error');
+
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('is-loading');
+        }
+        if (errorEl) {
+            errorEl.classList.add('hidden');
+            errorEl.textContent = '';
+        }
+
+        try {
+            const res = await fetch(form.action, { method: 'POST', body: formData });
+            const text = await res.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                data = {};
+            }
+
+            if (data?.data?.success) {
+                window.location.href = '/';
+                return;
+            }
+
+            const errMsg = data?.error?.message || data?.error || 'Error al registrar. Revisa la contraseña.';
+            if (errorEl) {
+                errorEl.textContent = errMsg;
+                errorEl.classList.remove('hidden');
+                errorEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            } else {
+                alert(errMsg);
+            }
+
+            // Conservar datos, solo borrar contraseña
+            form.querySelector('[name="full_name"]').value = formData.get('full_name') || '';
+            form.querySelector('[name="email"]').value = formData.get('email') || '';
+            form.querySelector('[name="program_id"]').value = formData.get('program_id') || '';
+            form.querySelector('[name="semester"]').value = formData.get('semester') || '';
+            form.querySelector('[name="password"]').value = '';
+        } catch (_) {
+            if (errorEl) {
+                errorEl.textContent = 'Error de conexión. Intenta de nuevo.';
+                errorEl.classList.remove('hidden');
+            }
+            form.querySelector('[name="password"]').value = '';
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('is-loading');
+            }
+        }
+    });
+
     window.unlockButtons = () => {
         document.querySelectorAll('button[type="submit"]').forEach(btn => {
             btn.removeAttribute('disabled');

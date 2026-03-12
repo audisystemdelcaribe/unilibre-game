@@ -36,7 +36,7 @@ const role = profile?.role || 'player';
 
 // 2. Opciones del menú
 const menuOptions = [
-    { name: 'Inicio', href: '/dashboard', icon: 'layout-dashboard', roles: ['admin', 'docente', 'player'] },
+    { name: 'Inicio', href: '/dashboard', icon: 'layout-dashboard', roles: ['admin', 'docente', 'preseleccion', 'player'] },
 
     // --- SECCIÓN: INFRAESTRUCTURA (Solo Admin) ---
     { name: 'Facultades', href: '/dashboard/facultades', icon: 'building-2', roles: ['admin'] },
@@ -55,7 +55,7 @@ const menuOptions = [
     { name: 'Mente más Rápida', href: '/dashboard/mente-rapida', icon: 'zap', roles: ['admin', 'docente'] },
 
     // --- SECCIÓN: EJECUCIÓN (Admin y Docente) ---
-    { name: 'Eventos / Salones', href: '/dashboard/eventos', icon: 'gamepad-2', roles: ['admin', 'docente'] },
+    { name: 'Eventos / Salones', href: '/dashboard/eventos', icon: 'gamepad-2', roles: ['admin', 'docente', 'preseleccion'] },
     { name: 'Finalistas por Programa', href: '/dashboard/finalistas', icon: 'trophy', roles: ['admin', 'docente'] },
 
     // --- SECCIÓN: ESTUDIANTE ---
@@ -63,7 +63,7 @@ const menuOptions = [
     { name: 'Ayudar a participante', href: '/play/ayudar', icon: 'users-round', roles: ['player'] },
 
     // --- SECCIÓN: MI CUENTA (todos) ---
-    { name: 'Mi cuenta', href: '/dashboard/mi-cuenta', icon: 'user-cog', roles: ['admin', 'docente', 'player'] },
+    { name: 'Mi cuenta', href: '/dashboard/mi-cuenta', icon: 'user-cog', roles: ['admin', 'docente', 'preseleccion', 'player'] },
 ];
 
 const filteredMenu = menuOptions.filter(opt => opt.roles.includes(role));

@@ -32,14 +32,14 @@ export const GET: APIRoute = async ({ locals, url }) => {
         .eq("auth_user_id", user.id)
         .single();
 
-    if (profile?.role !== "admin" && profile?.role !== "docente") {
+    if (profile?.role !== "admin" && profile?.role !== "docente" && profile?.role !== "preseleccion") {
         return new Response(JSON.stringify({ error: "Acceso denegado" }), {
             status: 403,
             headers: { "Content-Type": "application/json" },
         });
     }
 
-    const { data: round } = await supabase
+    const { data: round } = await supabaseAdmin
         .from("event_rounds")
         .select("event_id, classroom_group_id, current_question_id, status, events(game_mode_id)")
         .eq("id", roundId)
@@ -48,6 +48,15 @@ export const GET: APIRoute = async ({ locals, url }) => {
     if (!round) {
         return new Response(JSON.stringify({ error: "Ronda no encontrada" }), {
             status: 404,
+            headers: { "Content-Type": "application/json" },
+        });
+    }
+
+    // Rol preseleccion: solo puede ver datos de rondas de Preselección
+    const gameModeId = (round?.events as { game_mode_id?: number })?.game_mode_id;
+    if (profile?.role === "preseleccion" && gameModeId !== 1) {
+        return new Response(JSON.stringify({ error: "Tu rol solo permite ver Preselección" }), {
+            status: 403,
             headers: { "Content-Type": "application/json" },
         });
     }
@@ -100,17 +109,33 @@ export const GET: APIRoute = async ({ locals, url }) => {
         result.last_word_used = !!lw;
     }
 
-    // Siempre traer conectados (event_players)
-    const { data: connected } = await supabase
-        .from("event_players")
-        .select("player_id, players(name)")
-        .eq("event_id", round.event_id)
-        .eq("classroom_group_id", round.classroom_group_id);
+    // Conectados: intentar game_sessions (round_id) y event_players (event_id+classroom_group_id)
+    const roundIdNum = parseInt(roundId, 10);
+    const playerIds = new Set<number>();
 
-    if (connected) {
-        result.connected = connected.map((c) => ({
-            player_id: c.player_id,
-            name: (c.players as { name?: string })?.name || "Estudiante",
+    const { data: sessions } = await supabaseAdmin
+        .from("game_sessions")
+        .select("player_id")
+        .eq("round_id", roundIdNum)
+        .eq("finished", false);
+    if (sessions) sessions.forEach((s) => s.player_id && playerIds.add(s.player_id));
+
+    const { data: eventPlayers } = await supabaseAdmin
+        .from("event_players")
+        .select("player_id")
+        .eq("event_id", round.event_id)
+        .eq("classroom_group_id", round.classroom_group_id ?? "");
+    if (eventPlayers) eventPlayers.forEach((ep) => ep.player_id && playerIds.add(ep.player_id));
+
+    if (playerIds.size > 0) {
+        const { data: players } = await supabaseAdmin
+            .from("players")
+            .select("id, name")
+            .in("id", [...playerIds]);
+        const nameMap = new Map((players || []).map((p) => [p.id, p.name || "Estudiante"]));
+        result.connected = [...playerIds].map((id) => ({
+            player_id: id,
+            name: nameMap.get(id) || "Estudiante",
         }));
     }
 

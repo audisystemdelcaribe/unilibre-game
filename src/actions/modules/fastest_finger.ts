@@ -2,7 +2,7 @@
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
-import { ensureAdmin, ensureStaff } from '../utils';
+import { ensureAdmin, ensureStaffFull } from '../utils';
 
 export const fastestFingerActions = {
     saveSequence: defineAction({
@@ -61,7 +61,7 @@ export const fastestFingerActions = {
         accept: 'form',
         input: z.object({ round_id: z.string() }),
         handler: async ({ round_id }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Mente más Rápida: preseleccion no puede
             const rId = parseInt(round_id);
 
             const { data: round } = await supabaseAdmin.from('event_rounds').select('event_id, classroom_group_id, status').eq('id', rId).single();
@@ -196,7 +196,7 @@ export const fastestFingerActions = {
         accept: 'form',
         input: z.object({ round_id: z.string(), player_id: z.string() }),
         handler: async ({ round_id, player_id }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Mente más Rápida: preseleccion no puede
 
             const rId = parseInt(round_id);
             const pId = parseInt(player_id);

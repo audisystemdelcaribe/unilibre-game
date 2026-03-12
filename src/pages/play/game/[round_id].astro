@@ -87,6 +87,10 @@ const displayAnswers = round?.questions?.answers
 
 // 3. Procesar resultado de la acción
 const result = Astro.getActionResult(actions.submitAnswer);
+const withdrawResult = Astro.getActionResult(actions.withdrawFromSillaCaliente);
+if (withdrawResult?.data?.success) {
+    return Astro.redirect(`/play/results/${round_id}`);
+}
 const hasResponded = result?.data?.success || false;
 const isCorrect = result?.data?.correct || false;
 const submitError = result?.error?.message;
@@ -204,6 +208,14 @@ const debugResult = result ? {
                 {!isJuegoFinal && (
                     <div id="timer-display" class="text-3xl sm:text-4xl font-black italic text-white tabular-nums">00</div>
                 )}
+                {isJuegoFinal && gameSession && (
+                    <form method="POST" action={actions.withdrawFromSillaCaliente} class="flex-shrink-0" id="withdraw-form">
+                        <input type="hidden" name="round_id" value={round_id} />
+                        <button type="submit" class="btn btn-sm btn-warning text-zinc-900 font-bold border border-amber-400/60" onclick="return confirm('¿Retirarte y llevarte lo acumulado? Se guardará tu premio y saldrás del juego.');">
+                            <Icon name="lucide:log-out" class="w-4 h-4" /> Retirarme
+                        </button>
+                    </form>
+                )}
             </div>
         </header>
 
@@ -240,6 +252,11 @@ const debugResult = result ? {
                                 <div class="p-4 bg-red-500/20 border border-red-500/50 rounded-2xl text-red-400 text-sm font-bold">
                                     Error: {submitError}
                                 </div>
+                        )}
+                        {withdrawResult?.error?.message && (
+                            <div class="p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl text-amber-200 text-sm font-bold">
+                                {withdrawResult.error.message}
+                            </div>
                         )}
                         <div class="text-center px-1">
                             <h2 class="text-xl min-[400px]:text-2xl sm:text-3xl md:text-5xl font-black leading-tight italic uppercase text-white drop-shadow-2xl break-words">

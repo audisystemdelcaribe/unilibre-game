@@ -132,7 +132,7 @@ if (Astro.request.method === "POST") {
 		<p class="text-zinc-500 text-sm mt-2 font-medium uppercase tracking-widest">La carrera del saber</p>
 	</div>
 
-	<form method="POST" class="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-2xl space-y-5">
+	<form id="login-form" method="POST" class="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-2xl space-y-5">
 		{errorMessage && (
 			<div class="bg-red-500/10 border border-red-500 text-red-500 text-xs p-3 rounded-lg font-bold text-center">
 				{errorMessage}
@@ -161,10 +161,12 @@ if (Astro.request.method === "POST") {
 		</div>
 
 		<button
+			id="login-btn"
 			type="submit"
-			class="w-full bg-unilibre-blue hover:bg-blue-600 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95"
+			class="w-full bg-unilibre-blue hover:bg-blue-600 text-white font-black py-4 rounded-xl transition-all shadow-lg active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center gap-2"
 		>
-			INICIAR SESIÓN
+			<span id="login-btn-text">INICIAR SESIÓN</span>
+			<span id="login-btn-spinner" class="hidden w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
 		</button>
 
 		<p class="text-center text-zinc-500 text-sm mt-4">
@@ -172,5 +174,17 @@ if (Astro.request.method === "POST") {
 		</p>
 	</form>
 </div>
+<script>
+	document.getElementById('login-form')?.addEventListener('submit', function() {
+		const btn = document.getElementById('login-btn');
+		const text = document.getElementById('login-btn-text');
+		const spinner = document.getElementById('login-btn-spinner');
+		if (btn && text && spinner) {
+			btn.disabled = true;
+			text.textContent = 'Procesando...';
+			spinner.classList.remove('hidden');
+		}
+	});
+</script>
 </body>
 </html>

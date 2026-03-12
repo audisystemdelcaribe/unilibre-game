@@ -2,7 +2,7 @@ import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
 import { applyScopeFilter, type EventScope } from '../../lib/questionScope';
 import { supabaseAdmin } from '../../lib/supabaseAdmin';
-import { ensureAdmin, ensureStaff } from '../utils';
+import { ensureAdmin, ensureStaffFull } from '../utils';
 
 export const lifelinesActions = {
     useLifeline5050: defineAction({
@@ -12,7 +12,7 @@ export const lifelinesActions = {
             question_id: z.string(),
         }),
         handler: async (input, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Comodines son para Clásico
 
             const { round_id, question_id } = input;
             const rId = parseInt(round_id);
@@ -97,7 +97,7 @@ export const lifelinesActions = {
         accept: 'form',
         input: z.object({ round_id: z.string(), question_id: z.string() }),
         handler: async ({ round_id, question_id }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Comodines son para Clásico
             const rId = parseInt(round_id);
             const qId = parseInt(question_id);
 
@@ -162,7 +162,7 @@ export const lifelinesActions = {
         accept: 'form',
         input: z.object({ round_id: z.string(), question_id: z.string() }),
         handler: async ({ round_id, question_id }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Comodines son para Clásico
             const rId = parseInt(round_id);
 
             const { data: alreadyUsed } = await supabaseAdmin
@@ -191,7 +191,7 @@ export const lifelinesActions = {
         accept: 'form',
         input: z.object({ round_id: z.string(), question_id: z.string() }),
         handler: async ({ round_id, question_id }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Comodines son para Clásico
             const rId = parseInt(round_id);
 
             const { data: alreadyUsed } = await supabaseAdmin
@@ -220,7 +220,7 @@ export const lifelinesActions = {
         accept: 'form',
         input: z.object({ round_id: z.string(), question_id: z.string() }),
         handler: async ({ round_id, question_id }, context) => {
-            await ensureStaff(context);
+            await ensureStaffFull(context); // Comodines son para Clásico
             const rId = parseInt(round_id);
             const qId = parseInt(question_id);
 

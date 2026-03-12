@@ -14,7 +14,7 @@ const { data: myProfile } = await Astro.locals.supabase
     .select('role')
     .eq('auth_user_id', user.id)
     .single();
-if (myProfile?.role !== 'admin' && myProfile?.role !== 'docente') return Astro.redirect("/dashboard");
+if (myProfile?.role !== 'admin' && myProfile?.role !== 'docente' && myProfile?.role !== 'preseleccion') return Astro.redirect("/dashboard");
 
 const { data: round } = await Astro.locals.supabase
     .from('event_rounds').select('*, events(*)').eq('id', round_id).single();
@@ -27,6 +27,10 @@ const { data: ffRound } = await supabaseAdmin
     .maybeSingle();
 
 const gameModeId = round?.events?.game_mode_id;
+// Rol preseleccion: solo puede controlar rondas de Preselección
+if (myProfile?.role === 'preseleccion' && gameModeId !== 1) {
+    return Astro.redirect("/dashboard/eventos?error=preseleccion_only");
+}
 const isMenteRapida = gameModeId === 3;
 const isFastestFinger = round?.status === 'fastest_finger';
 const isClasico = gameModeId === 2;
@@ -39,7 +43,8 @@ if (gameModeId === 2) {
 
 let qText = "Cargando...";
 let currentLevel: { id: number; name: string; money_value: number; difficulty_order: number; is_safe_level: boolean } | null = null;
-if (round?.current_question_id) {
+// No cargar pregunta de preselección cuando estamos en Mente más Rápida (round.current_question_id es de otra fase)
+if (round?.current_question_id && round?.status !== 'fastest_finger') {
     const { data: q } = await Astro.locals.supabase.from('questions').select('question_text, level_id').eq('id', round.current_question_id).single();
     qText = q?.question_text || qText;
     if (q?.level_id && gameModeId === 2) {
@@ -279,7 +284,14 @@ if (confirmResult?.data?.clasico_round_id) {
                                             <p class="text-amber-400 text-sm font-bold mt-4">Modo Mente más Rápida - Solo finalistas</p>
                                         )}
                                         {isClasico && (
-                                            <p class="text-amber-400 text-sm font-bold mt-4">Modo Silla Caliente - Clásico</p>
+                                            <>
+                                                <p class="text-amber-400 text-sm font-bold mt-4">Modo Silla Caliente - Clásico</p>
+                                                <div class="mt-6 p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl text-left max-w-md mx-auto">
+                                                    <p class="text-amber-400 font-black text-xs uppercase mb-1">Código de acceso para el ganador</p>
+                                                    <p class="text-2xl font-mono font-black text-white tracking-widest">{round.session_pin}</p>
+                                                    <p class="text-zinc-500 text-xs mt-2">Solo el ganador puede usar este PIN en /play. Si el estudiante se desconecta, que vuelva a entrar con este código.</p>
+                                                </div>
+                                            </>
                                         )}
                                         {isClasico && lifelines && lifelines.length > 0 && (
                                             <div class="mt-6 pt-4 border-t border-white/10">
@@ -294,23 +306,39 @@ if (confirmResult?.data?.clasico_round_id) {
                                     </div>
                             ) : isFastestFinger ? (
                                     <div>
-                                        <p class="text-yellow-400 font-black italic uppercase text-xs mb-4">Mente más Rápida</p>
-                                        <h1 class="text-2xl font-bold italic" id="question-text">{ffRound?.fastest_finger_sequences?.title ?? 'Ordena los ítems en el orden correcto'}</h1>
-                                        <div class="mt-8 flex gap-4">
+                                        <h1 class="text-2xl font-bold italic text-yellow-400 mb-6">Mente más Rápida — Resultados</h1>
+                                        <p class="text-zinc-500 text-sm mb-6">La prueba finalizó. Revisa los participantes y confirma al ganador para pasar a Silla Caliente.</p>
+                                        {round?.session_pin && (
+                                            <div class="mb-6 p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl">
+                                                <p class="text-amber-400 text-xs font-black uppercase">PIN de la sala (participantes usan /play para unirse)</p>
+                                                <p class="text-3xl font-mono font-black text-white tracking-widest">{round.session_pin}</p>
+                                            </div>
+                                        )}
+                                        <div class="flex gap-4">
                                             <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex-1 text-center">
                                                 <p class="text-[10px] text-zinc-500 uppercase font-black">Respondieron</p>
                                                 <p class="text-4xl font-black text-white" id="answered-count">0</p>
                                             </div>
                                         </div>
                                         <div id="ff-attempts-list" class="mt-6 space-y-2 max-h-48 overflow-y-auto"></div>
-                                        <div id="ff-winner-box" class="mt-4 hidden p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-2xl">
+                                        <div id="ff-winner-box" class="mt-4 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-2xl hidden">
                                             <p class="text-[10px] font-black text-yellow-400 uppercase">Ganador sugerido</p>
                                             <p id="ff-winner-name" class="text-xl font-black text-white"></p>
-                                            <form method="POST" action={actions.confirmWinner} class="mt-3" onsubmit="return confirm('¿Confirmar ganador?');">
-                                                <input type="hidden" name="round_id" value={round_id} />
-                                                <input type="hidden" name="player_id" id="ff-winner-player-id" />
-                                                <button type="submit" class="btn btn-warning btn-sm">Confirmar ganador → Silla Caliente</button>
-                                            </form>
+                                            <div class="mt-3">
+                                                <input type="hidden" id="ff-winner-round-id" value={round_id} />
+                                                <input type="hidden" id="ff-winner-player-id" />
+                                                <button type="button" id="ff-confirm-winner-btn" class="btn btn-warning btn-sm">
+                                                    Confirmar ganador → Silla Caliente
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div id="ff-no-winner-box" class="mt-4 hidden p-4 bg-red-500/20 border border-red-500/50 rounded-2xl">
+                                            <p class="text-red-400 font-bold">Ninguno respondió correctamente.</p>
+                                            <p class="text-zinc-400 text-sm mt-1">Repite la prueba de Mente más Rápida para poder seleccionar un ganador.</p>
+                                        </div>
+                                        <div id="ff-waiting-box" class="mt-4 p-4 bg-zinc-700/50 border border-zinc-600 rounded-2xl">
+                                            <p class="text-zinc-400 font-bold">Esperando respuestas...</p>
+                                            <p class="text-zinc-500 text-sm mt-1">El botón para confirmar ganador aparecerá cuando haya al menos un participante que respondió correctamente.</p>
                                         </div>
                                     </div>
                             ) : (
@@ -318,6 +346,12 @@ if (confirmResult?.data?.clasico_round_id) {
                                         <p class="text-primary font-black italic uppercase text-xs mb-4">En curso:</p>
                                         {isClasico && clasicoParticipantName && (
                                             <p class="text-amber-400 font-bold text-lg mb-2">Participante: {clasicoParticipantName}</p>
+                                        )}
+                                        {isClasico && (
+                                            <div class="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl inline-block">
+                                                <p class="text-amber-400 text-[10px] font-black uppercase">PIN para el ganador (si se desconecta)</p>
+                                                <p class="text-xl font-mono font-black text-white tracking-widest">{round?.session_pin || '—'}</p>
+                                            </div>
                                         )}
                                         <h1 class:list={["font-bold italic", isClasico ? "text-4xl md:text-5xl lg:text-6xl" : "text-3xl"]} id="question-text">{qText}</h1>
                                         {!isClasico && (
@@ -493,7 +527,7 @@ if (confirmResult?.data?.clasico_round_id) {
     </div>
 </DashboardLayout>
 
-<script is:inline define:vars={{ round, isWaiting, isActive, isFinished, isClasico }}>
+<script is:inline define:vars={{ round, roundId: round_id, isWaiting, isActive, isFinished, isClasico }}>
     let procesados = new Set();
     let respondidosProcesados = new Set();
 
@@ -537,7 +571,7 @@ if (confirmResult?.data?.clasico_round_id) {
         if (isFinished) return;
 
         try {
-            const res = await fetch(`/api/control/responders?round_id=${round.id}`);
+            const res = await fetch(`/api/control/responders?round_id=${roundId || round?.id || ''}`);
             if (!res.ok) return;
             const data = await res.json();
 
@@ -629,10 +663,20 @@ if (confirmResult?.data?.clasico_round_id) {
                         div.appendChild(s2);
                         attemptsList.appendChild(div);
                     });
+                    const noWinnerBox = document.getElementById('ff-no-winner-box');
+                    const waitingBox = document.getElementById('ff-waiting-box');
                     if (correct.length > 0 && winnerBox && winnerName && winnerPlayerId) {
                         winnerBox.classList.remove('hidden');
                         winnerName.textContent = correct[0].name || 'Estudiante';
-                        winnerPlayerId.value = correct[0].player_id;
+                        winnerPlayerId.value = String(correct[0].player_id);
+                        if (noWinnerBox) noWinnerBox.classList.add('hidden');
+                        if (waitingBox) waitingBox.classList.add('hidden');
+                    } else if (data.fastest_finger_attempts.length > 0 && noWinnerBox) {
+                        noWinnerBox.classList.remove('hidden');
+                        if (winnerBox) winnerBox.classList.add('hidden');
+                        if (waitingBox) waitingBox.classList.add('hidden');
+                    } else if (waitingBox) {
+                        waitingBox.classList.remove('hidden');
                     }
                 }
             }
@@ -642,7 +686,7 @@ if (confirmResult?.data?.clasico_round_id) {
     // Detector de cambios (Recarga si el profe lanza otra pregunta o termina)
     setInterval(async () => {
         try {
-            const res = await fetch(`/api/control/responders?round_id=${round.id}`);
+            const res = await fetch(`/api/control/responders?round_id=${roundId || round?.id || ''}`);
             if (!res.ok) return;
             const data = await res.json();
             if (String(data.current_question_id) !== String(round.current_question_id) || data.status !== round.status) {
@@ -682,6 +726,43 @@ if (confirmResult?.data?.clasico_round_id) {
                 }
             }).catch(function() { btn.disabled = false; });
         });
+    });
+
+    // Botón Confirmar ganador → Silla Caliente (llama API y redirige)
+    document.getElementById('ff-confirm-winner-btn')?.addEventListener('click', async function() {
+        if (!confirm('¿Confirmar ganador?')) return;
+        const roundId = (document.getElementById('ff-winner-round-id') as HTMLInputElement)?.value;
+        const playerId = (document.getElementById('ff-winner-player-id') as HTMLInputElement)?.value;
+        if (!roundId || !playerId) {
+            alert('No hay ganador seleccionado. Espera a que se muestren los resultados.');
+            return;
+        }
+        const btn = document.getElementById('ff-confirm-winner-btn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Procesando...';
+        }
+        try {
+            const res = await fetch('/api/control/confirm-winner', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ round_id: roundId, player_id: playerId }),
+                credentials: 'same-origin'
+            });
+            const data = await res.json();
+            if (data.clasico_round_id) {
+                window.location.href = `/dashboard/eventos/control/${data.clasico_round_id}`;
+                return;
+            }
+            alert(data.error || 'Error al confirmar ganador');
+        } catch (e) {
+            alert('Error de conexión');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'Confirmar ganador → Silla Caliente';
+            }
+        }
     });
 
     sync();

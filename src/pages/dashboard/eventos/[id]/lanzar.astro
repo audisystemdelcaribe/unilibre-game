@@ -6,7 +6,7 @@ import FormButton from "@/components/FormButton.astro";
 const user = await Astro.locals.getUser();
 if (!user) return Astro.redirect("/");
 const { data: profile } = await Astro.locals.supabase.from('players').select('role').eq('auth_user_id', user.id).single();
-if (profile?.role !== 'admin' && profile?.role !== 'docente') return Astro.redirect("/dashboard");
+if (profile?.role !== 'admin' && profile?.role !== 'docente' && profile?.role !== 'preseleccion') return Astro.redirect("/dashboard");
 
 const { id } = Astro.params; // Este es el event_id
 const result = Astro.getActionResult(actions.openClassroomSession);
@@ -21,6 +21,11 @@ const { data: event } = await Astro.locals.supabase
     .select('name, game_mode_id')
     .eq('id', id)
     .single();
+
+// Rol preseleccion: solo puede lanzar Preselección
+if (profile?.role === 'preseleccion' && event?.game_mode_id !== 1) {
+    return Astro.redirect("/dashboard/eventos?error=preseleccion_only");
+}
 
 const isMenteRapida = event?.game_mode_id === 3;
 const isClasico = event?.game_mode_id === 2;
