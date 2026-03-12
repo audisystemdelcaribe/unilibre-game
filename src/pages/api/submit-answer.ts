@@ -90,7 +90,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     const startTime = new Date(roundRes.data.question_started_at).getTime();
     const responseMs = now - startTime;
-    const limitMs = ((questionRes.data?.game_levels as { time_limit?: number })?.time_limit ?? 30) * 1000;
+    const gameModeId = (roundRes.data?.events as { game_mode_id?: number })?.game_mode_id;
+    const limitMs = (gameModeId === 1 ? 30 : ((questionRes.data?.game_levels as { time_limit?: number })?.time_limit ?? 30)) * 1000;
     const isCorrect = answerRes.data.is_correct ?? false;
 
     const { data: gameSession } = await supabaseAdmin

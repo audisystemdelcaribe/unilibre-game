@@ -548,7 +548,7 @@ const debugResult = result ? {
             })();
         </script>
     )}
-    <script is:inline define:vars={{ roundId: round_id, currentQ: round?.current_question_id, startTime: round?.question_started_at, limit: round?.questions?.game_levels?.time_limit || 30, isJuegoFinal }}>
+    <script is:inline define:vars={{ roundId: round_id, currentQ: round?.current_question_id, startTime: round?.question_started_at, limit: isPreseleccion ? 30 : (round?.questions?.game_levels?.time_limit || 30), isJuegoFinal }}>
         window.isJuegoFinal = isJuegoFinal;
         let isDone = false;
 
