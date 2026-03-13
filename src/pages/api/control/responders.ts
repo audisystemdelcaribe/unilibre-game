@@ -126,18 +126,15 @@ export const GET: APIRoute = async ({ locals, url }) => {
         // Si game_sessions no tiene round_id o falla, usamos solo event_players
     }
 
-    // 2. event_players: quienes se unieron al evento con este grupo
+    // 2. event_players: quienes se unieron al evento
     const { data: eventPlayers } = await supabaseAdmin
         .from("event_players")
-        .select("player_id, classroom_group_id")
+        .select("player_id")
         .eq("event_id", round.event_id);
 
     if (eventPlayers) {
         eventPlayers.forEach((ep) => {
-            const epGroup = String(ep.classroom_group_id ?? "").trim();
-            if (groupId ? epGroup === groupId : epGroup === "" || epGroup === groupId) {
-                if (ep.player_id) playerIds.add(ep.player_id);
-            }
+            if (ep.player_id) playerIds.add(ep.player_id);
         });
     }
 

@@ -514,10 +514,10 @@ if (confirmResult?.data?.clasico_round_id) {
                     ) : (
                         <div class="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm flex flex-col max-h-[50vh] overflow-hidden">
                             <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">
-                                {isWaiting ? 'Lobby' : 'Respuestas'}
+                                {isWaiting ? 'Lobby' : 'Lobby / Respuestas'}
                             </h3>
                             <div id="live-container" class="flex-1 overflow-y-auto space-y-2 pr-2">
-                                {isWaiting && <div id="players-grid" class="grid grid-cols-2 gap-2"></div>}
+                                <div id="players-grid" class="grid grid-cols-2 gap-2"></div>
                                 {isActive && <div id="responders-list" class="space-y-2"></div>}
                             </div>
                         </div>
@@ -575,19 +575,17 @@ if (confirmResult?.data?.clasico_round_id) {
             if (!res.ok) return;
             const data = await res.json();
 
-            // 1. CONECTADOS (Lobby - no en Clásico)
+            // 1. CONECTADOS (Lobby / participantes) - no en Clásico
             if (data.connected && !isClasico) {
                 data.connected.forEach(a => {
                     if (!procesados.has(a.player_id)) {
                         procesados.add(a.player_id);
-                        if (isWaiting) {
-                            const grid = document.getElementById('players-grid');
-                            if (grid) {
-                                const div = document.createElement('div');
-                                div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
-                                div.innerText = a.name || 'Anónimo';
-                                grid.appendChild(div);
-                            }
+                        const grid = document.getElementById('players-grid');
+                        if (grid) {
+                            const div = document.createElement('div');
+                            div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
+                            div.innerText = a.name || 'Anónimo';
+                            grid.appendChild(div);
                         }
                     }
                 });
