@@ -514,10 +514,10 @@ if (confirmResult?.data?.clasico_round_id) {
                     ) : (
                         <div class="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm flex flex-col max-h-[50vh] overflow-hidden">
                             <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">
-                                {isWaiting ? 'Lobby' : 'Lobby / Respuestas'}
+                                {isWaiting ? 'Lobby' : 'Respuestas'}
                             </h3>
                             <div id="live-container" class="flex-1 overflow-y-auto space-y-2 pr-2">
-                                <div id="players-grid" class="grid grid-cols-2 gap-2"></div>
+                                {isWaiting && <div id="players-grid" class="grid grid-cols-2 gap-2"></div>}
                                 {isActive && <div id="responders-list" class="space-y-2"></div>}
                             </div>
                         </div>
@@ -575,8 +575,8 @@ if (confirmResult?.data?.clasico_round_id) {
             if (!res.ok) return;
             const data = await res.json();
 
-            // 1. CONECTADOS (Lobby / participantes) - no en Clásico
-            if (data.connected && !isClasico) {
+            // 1. CONECTADOS (Lobby) - no en Clásico, solo cuando estamos en waiting
+            if (data.connected && !isClasico && isWaiting) {
                 data.connected.forEach(a => {
                     if (!procesados.has(a.player_id)) {
                         procesados.add(a.player_id);

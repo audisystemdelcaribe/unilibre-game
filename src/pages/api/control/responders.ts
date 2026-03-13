@@ -39,10 +39,11 @@ export const GET: APIRoute = async ({ locals, url }) => {
         });
     }
 
+    const roundIdNum = parseInt(roundId, 10);
     const { data: round } = await supabaseAdmin
         .from("event_rounds")
         .select("event_id, classroom_group_id, current_question_id, status, events(game_mode_id)")
-        .eq("id", roundId)
+        .eq("id", isNaN(roundIdNum) ? roundId : roundIdNum)
         .single();
 
     if (!round) {
@@ -110,7 +111,6 @@ export const GET: APIRoute = async ({ locals, url }) => {
     }
 
     // Conectados: game_sessions (round_id) + event_players (event_id + classroom_group_id)
-    const roundIdNum = parseInt(roundId, 10);
     const playerIds = new Set<number>();
     const groupId = String(round.classroom_group_id ?? "").trim();
 
@@ -126,15 +126,18 @@ export const GET: APIRoute = async ({ locals, url }) => {
         // Si game_sessions no tiene round_id o falla, usamos solo event_players
     }
 
-    // 2. event_players: quienes se unieron al evento
+    // 2. event_players: quienes se unieron al evento con este grupo
     const { data: eventPlayers } = await supabaseAdmin
         .from("event_players")
-        .select("player_id")
+        .select("player_id, classroom_group_id")
         .eq("event_id", round.event_id);
 
     if (eventPlayers) {
         eventPlayers.forEach((ep) => {
-            if (ep.player_id) playerIds.add(ep.player_id);
+            const epGroup = String(ep.classroom_group_id ?? "").trim();
+            if (groupId ? epGroup === groupId : epGroup === "" || epGroup === groupId) {
+                if (ep.player_id) playerIds.add(ep.player_id);
+            }
         });
     }
 
