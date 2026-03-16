@@ -16,8 +16,9 @@ const { data: myProfile } = await Astro.locals.supabase
     .single();
 if (myProfile?.role !== 'admin' && myProfile?.role !== 'docente' && myProfile?.role !== 'preseleccion') return Astro.redirect("/dashboard");
 
+const roundIdNum = parseInt(String(round_id), 10);
 const { data: round } = await Astro.locals.supabase
-    .from('event_rounds').select('*, events(*)').eq('id', round_id).single();
+    .from('event_rounds').select('*, events(*)').eq('id', Number.isNaN(roundIdNum) ? round_id : roundIdNum).single();
 
 // Usar supabaseAdmin para evitar RLS que devuelve null en relaciones embebidas
 const { data: ffRound } = await supabaseAdmin
@@ -156,6 +157,33 @@ if (isClasico && (isActive || isWaiting)) {
     usedLifelines = [...new Set((usage || []).map((u) => u.lifeline_code))];
     // La votación del público solo se muestra mientras estamos en la pregunta para la que se activó
     showAudienceVotes = !!(usage || []).find((u) => u.lifeline_code === 'publico' && u.question_id === round?.current_question_id);
+}
+
+// Cargar conectados e intentos Mente más Rápida en el servidor (solo quienes entraron con el PIN de ESTA ronda)
+let initialConnected: { player_id: number; name: string }[] = [];
+let initialFastestAttempts: { player_id: number; name: string; response_time_ms: number; is_correct: boolean }[] = [];
+if (round && !isClasico) {
+    const rId = parseInt(String(round_id), 10) || 0;
+    const playerIds = new Set<number>();
+    const { data: sessions } = await supabaseAdmin.from("game_sessions").select("player_id").eq("round_id", rId).eq("finished", false);
+    if (sessions) sessions.forEach((s: { player_id?: number }) => s.player_id && playerIds.add(s.player_id));
+    if (playerIds.size > 0) {
+        const { data: players } = await supabaseAdmin.from("players").select("id, name").in("id", [...playerIds]);
+        const nameMap = new Map((players || []).map((p: { id: number; name?: string }) => [p.id, p.name || "Estudiante"]));
+        initialConnected = [...playerIds].map((id) => ({ player_id: id, name: nameMap.get(id) || "Estudiante" }));
+    }
+}
+if (round?.status === "fastest_finger") {
+    const { data: ffRound } = await supabaseAdmin.from("fastest_finger_rounds").select("id").eq("event_round_id", parseInt(String(round_id), 10)).maybeSingle();
+    if (ffRound) {
+        const { data: attempts } = await supabaseAdmin.from("fastest_finger_attempts").select("player_id, response_time_ms, is_correct, players(name)").eq("fastest_finger_round_id", ffRound.id);
+        initialFastestAttempts = (attempts || []).map((a: { player_id: number; response_time_ms: number; is_correct: boolean; players?: { name?: string } }) => ({
+            player_id: a.player_id,
+            name: (a.players as { name?: string })?.name || "Estudiante",
+            response_time_ms: a.response_time_ms ?? 0,
+            is_correct: a.is_correct ?? false,
+        }));
+    }
 }
 
 const result = Astro.getActionResult(actions.launchRandomQuestion) || Astro.getActionResult(actions.finishRound) || Astro.getActionResult(actions.launchFastestFinger) || Astro.getActionResult(actions.confirmWinner) || Astro.getActionResult(actions.useLifeline5050) || Astro.getActionResult(actions.useLifelineCambiarPregunta) || Astro.getActionResult(actions.useLifelineLlamada) || Astro.getActionResult(actions.useLifelinePublico) || Astro.getActionResult(actions.useLastWord) || Astro.getActionResult(actions.verifyClasicoAnswer);
@@ -307,7 +335,8 @@ if (confirmResult?.data?.clasico_round_id) {
                             ) : isFastestFinger ? (
                                     <div>
                                         <h1 class="text-2xl font-bold italic text-yellow-400 mb-6">Mente más Rápida — Resultados</h1>
-                                        <p class="text-zinc-500 text-sm mb-6">La prueba finalizó. Revisa los participantes y confirma al ganador para pasar a Silla Caliente.</p>
+                                        <p class="text-zinc-500 text-sm mb-2">Se espera a que respondan. El ganador es quien acierta correctamente en menos tiempo.</p>
+                                        <p class="text-zinc-500 text-sm mb-6">Revisa los resultados y confirma al ganador para pasar a Silla Caliente.</p>
                                         {round?.session_pin && (
                                             <div class="mb-6 p-4 bg-amber-500/20 border border-amber-500/50 rounded-2xl">
                                                 <p class="text-amber-400 text-xs font-black uppercase">PIN de la sala (participantes usan /play para unirse)</p>
@@ -317,26 +346,46 @@ if (confirmResult?.data?.clasico_round_id) {
                                         <div class="flex gap-4">
                                             <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex-1 text-center">
                                                 <p class="text-[10px] text-zinc-500 uppercase font-black">Respondieron</p>
-                                                <p class="text-4xl font-black text-white" id="answered-count">0</p>
+                                                <p class="text-4xl font-black text-white" id="answered-count">{initialFastestAttempts.length}</p>
                                             </div>
                                         </div>
-                                        <div id="ff-attempts-list" class="mt-6 space-y-2 max-h-48 overflow-y-auto"></div>
-                                        <div id="ff-winner-box" class="mt-4 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-2xl hidden">
-                                            <p class="text-[10px] font-black text-yellow-400 uppercase">Ganador sugerido</p>
-                                            <p id="ff-winner-name" class="text-xl font-black text-white"></p>
-                                            <div class="mt-3">
-                                                <input type="hidden" id="ff-winner-round-id" value={round_id} />
-                                                <input type="hidden" id="ff-winner-player-id" />
-                                                <button type="button" id="ff-confirm-winner-btn" class="btn btn-warning btn-sm">
-                                                    Confirmar ganador → Silla Caliente
-                                                </button>
-                                            </div>
+                                        <div id="ff-attempts-list" class="mt-6 space-y-2 max-h-48 overflow-y-auto">
+                                            {initialFastestAttempts.length > 0 && (() => {
+                                                const correct = initialFastestAttempts.filter(a => a.is_correct).sort((a,b) => a.response_time_ms - b.response_time_ms);
+                                                const minT = correct.length > 0 ? correct[0].response_time_ms : null;
+                                                const fastestIds = new Set(correct.filter(c => c.response_time_ms === minT).map(c => c.player_id));
+                                                return initialFastestAttempts.map((a) => {
+                                                    const isFastest = a.is_correct && fastestIds.has(a.player_id);
+                                                    return (
+                                                        <div class={`p-3 rounded-xl text-xs font-bold flex justify-between items-center ${isFastest ? 'bg-amber-500/30 text-amber-100 border-2 border-amber-400' : a.is_correct ? 'bg-green-500/20 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                                                            <span>{a.name}{isFastest ? ' 🏆' : ''}</span>
+                                                            <span>{(a.response_time_ms/1000).toFixed(2)}s {a.is_correct ? '✓' : '✗'}</span>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
                                         </div>
+                                        {(() => {
+                                            const correct = initialFastestAttempts.filter(a => a.is_correct).sort((a,b) => a.response_time_ms - b.response_time_ms);
+                                            const hasWinner = correct.length > 0;
+                                            return (
+                                                <div id="ff-winner-box" class={hasWinner ? "mt-4 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-2xl" : "mt-4 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-2xl hidden"}>
+                                                    <p class="text-[10px] font-black text-yellow-400 uppercase">Ganador sugerido</p>
+                                                    <p id="ff-winner-name" class="text-xl font-black text-white">{hasWinner ? correct[0].name : ''}</p>
+                                                    <p id="ff-winner-time" class="text-sm text-zinc-300 mt-1">{hasWinner ? 'Tiempo: ' + (correct[0].response_time_ms/1000).toFixed(2) + 's' : ''}</p>
+                                                    <div class="mt-3">
+                                                        <input type="hidden" id="ff-winner-round-id" value={String(round_id)} />
+                                                        <input type="hidden" id="ff-winner-player-id" value={hasWinner ? String(correct[0].player_id) : ''} />
+                                                        <button type="button" id="ff-confirm-winner-btn" class="btn btn-warning btn-sm">Confirmar ganador → Silla Caliente</button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
                                         <div id="ff-no-winner-box" class="mt-4 hidden p-4 bg-red-500/20 border border-red-500/50 rounded-2xl">
                                             <p class="text-red-400 font-bold">Ninguno respondió correctamente.</p>
                                             <p class="text-zinc-400 text-sm mt-1">Repite la prueba de Mente más Rápida para poder seleccionar un ganador.</p>
                                         </div>
-                                        <div id="ff-waiting-box" class="mt-4 p-4 bg-zinc-700/50 border border-zinc-600 rounded-2xl">
+                                        <div id="ff-waiting-box" class={initialFastestAttempts.length > 0 ? "mt-4 p-4 bg-zinc-700/50 border border-zinc-600 rounded-2xl hidden" : "mt-4 p-4 bg-zinc-700/50 border border-zinc-600 rounded-2xl"}>
                                             <p class="text-zinc-400 font-bold">Esperando respuestas...</p>
                                             <p class="text-zinc-500 text-sm mt-1">El botón para confirmar ganador aparecerá cuando haya al menos un participante que respondió correctamente.</p>
                                         </div>
@@ -514,11 +563,17 @@ if (confirmResult?.data?.clasico_round_id) {
                     ) : (
                         <div class="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm flex flex-col max-h-[50vh] overflow-hidden">
                             <h3 class="font-black italic uppercase text-slate-800 border-b pb-4 mb-4 text-center">
-                                {isWaiting ? 'Lobby' : 'Respuestas'}
+                                {isWaiting ? 'Lobby' : isFastestFinger ? 'Participantes / Resultados' : 'Respuestas'}
                             </h3>
                             <div id="live-container" class="flex-1 overflow-y-auto space-y-2 pr-2">
-                                {isWaiting && <div id="players-grid" class="grid grid-cols-2 gap-2"></div>}
-                                {isActive && <div id="responders-list" class="space-y-2"></div>}
+                                {!isClasico && (
+                                    <div id="players-grid" class="grid grid-cols-2 gap-2">
+                                        {initialConnected.map((p) => (
+                                            <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center">{p.name}</div>
+                                        ))}
+                                    </div>
+                                )}
+                                {isActive && <div id="responders-list" class="space-y-2 mt-2"></div>}
                             </div>
                         </div>
                     )}
@@ -527,9 +582,10 @@ if (confirmResult?.data?.clasico_round_id) {
     </div>
 </DashboardLayout>
 
-<script is:inline define:vars={{ round, roundId: round_id, isWaiting, isActive, isFinished, isClasico }}>
-    let procesados = new Set();
+<script is:inline define:vars={{ round, roundId: round_id, isWaiting, isActive, isFinished, isClasico, isFastestFinger, initialConnected }}>
+    let procesados = new Set(Array.isArray(initialConnected) ? initialConnected.map(p => String(p.player_id)) : []);
     let respondidosProcesados = new Set();
+    let lastQuestionId = round?.current_question_id ?? null;
 
     async function fetchAudienceVotes() {
         const box = document.getElementById('audience-votes-box');
@@ -571,32 +627,52 @@ if (confirmResult?.data?.clasico_round_id) {
         if (isFinished) return;
 
         try {
-            const res = await fetch(`/api/control/responders?round_id=${roundId || round?.id || ''}`);
+            const url = `/api/control/responders?round_id=${encodeURIComponent(roundId || round?.id || '')}&_=${Date.now()}`;
+            const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store', headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } });
             if (!res.ok) return;
             const data = await res.json();
 
-            // 1. CONECTADOS (Lobby) - no en Clásico, solo cuando estamos en waiting
-            if (data.connected && !isClasico && isWaiting) {
+            // 1. CONECTADOS (Lobby / participantes) - no en Clásico; mostrar siempre que haya panel
+            if (data.connected && !isClasico) {
+                const toAdd: { player_id: string; name: string }[] = [];
                 data.connected.forEach(a => {
-                    if (!procesados.has(a.player_id)) {
-                        procesados.add(a.player_id);
-                        const grid = document.getElementById('players-grid');
-                        if (grid) {
-                            const div = document.createElement('div');
-                            div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center animate-bounce";
-                            div.innerText = a.name || 'Anónimo';
-                            grid.appendChild(div);
-                        }
+                    const pid = String(a.player_id);
+                    if (!procesados.has(pid)) {
+                        procesados.add(pid);
+                        toAdd.push({ player_id: pid, name: (a.name || 'Anónimo') });
                     }
                 });
+                if (toAdd.length > 0) {
+                    let grid = document.getElementById('players-grid');
+                    if (!grid) {
+                        requestAnimationFrame(() => {
+                            const g = document.getElementById('players-grid');
+                            if (g) toAdd.forEach(a => { const d = document.createElement('div'); d.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center"; d.innerText = a.name; g.appendChild(d); });
+                        });
+                    } else {
+                        toAdd.forEach(a => {
+                            const div = document.createElement('div');
+                            div.className = "bg-blue-50 p-3 rounded-xl border border-blue-100 text-[10px] font-bold text-blue-600 text-center";
+                            div.innerText = a.name;
+                            grid.appendChild(div);
+                        });
+                    }
+                }
             }
 
-            // 2. RESPONDIERON (Radar de respuestas; en Clásico solo actualizamos el contador, no la lista)
-            if (isActive && data.responders) {
+            // 2. RESPONDIERON (Radar de respuestas). En cada nueva pregunta se borra la lista anterior.
+            if (isActive) {
+                const newQId = data.current_question_id ?? null;
+                if (String(newQId) !== String(lastQuestionId)) {
+                    lastQuestionId = newQId;
+                    respondidosProcesados.clear();
+                    const list = document.getElementById('responders-list');
+                    if (list) list.innerHTML = '';
+                }
                 const countEl = document.getElementById('answered-count');
                 const list = document.getElementById('responders-list');
-                if (countEl) countEl.innerText = data.responders.length;
-                if (list && !isClasico) {
+                if (countEl) countEl.innerText = String((data.responders || []).length);
+                if (list && !isClasico && data.responders && data.responders.length > 0) {
                     const correct = data.responders.filter(r => r.is_correct).sort((a,b) => (a.response_time_ms ?? 999999) - (b.response_time_ms ?? 999999));
                     const minTime = correct.length > 0 ? correct[0].response_time_ms : null;
                     const fastestCorrectIds = new Set(correct.filter(c => c.response_time_ms === minTime).map(c => c.player_id));
@@ -636,46 +712,51 @@ if (confirmResult?.data?.clasico_round_id) {
                 }
             }
 
-            // 3. MENTE MÁS RÁPIDA: intentos y ganador
+            // 3. MENTE MÁS RÁPIDA: intentos, tiempo (puntos) y ganador
             if (data.status === 'fastest_finger' && data.fastest_finger_attempts) {
                 const countEl = document.getElementById('answered-count');
                 const attemptsList = document.getElementById('ff-attempts-list');
                 const winnerBox = document.getElementById('ff-winner-box');
                 const winnerName = document.getElementById('ff-winner-name');
+                const winnerTime = document.getElementById('ff-winner-time');
                 const winnerPlayerId = document.getElementById('ff-winner-player-id');
-                if (countEl) countEl.innerText = data.fastest_finger_attempts.length;
+                if (countEl) countEl.innerText = String(data.fastest_finger_attempts.length);
+                const correct = data.fastest_finger_attempts.filter(a => a.is_correct).sort((a,b) => (a.response_time_ms || 0) - (b.response_time_ms || 0));
+                const minTime = correct.length > 0 ? correct[0].response_time_ms : null;
+                const fastestCorrectIds = new Set(correct.filter(c => c.response_time_ms === minTime).map(c => c.player_id));
                 if (attemptsList) {
                     attemptsList.innerHTML = '';
-                    const correct = data.fastest_finger_attempts.filter(a => a.is_correct).sort((a,b) => a.response_time_ms - b.response_time_ms);
-                    const minTime = correct.length > 0 ? correct[0].response_time_ms : null;
-                    const fastestCorrectIds = new Set(correct.filter(c => c.response_time_ms === minTime).map(c => c.player_id));
                     data.fastest_finger_attempts.forEach(a => {
                         const div = document.createElement('div');
                         const isFastestCorrect = a.is_correct && fastestCorrectIds.has(a.player_id);
-                        div.className = `p-3 rounded-xl text-xs font-bold flex justify-between ${isFastestCorrect ? 'bg-amber-500/30 text-amber-100 border-2 border-amber-400' : a.is_correct ? 'bg-green-500/20 text-green-400' : 'bg-red-500/10 text-red-400'}`;
+                        div.className = `p-3 rounded-xl text-xs font-bold flex justify-between items-center ${isFastestCorrect ? 'bg-amber-500/30 text-amber-100 border-2 border-amber-400' : a.is_correct ? 'bg-green-500/20 text-green-400' : 'bg-red-500/10 text-red-400'}`;
                         const s1 = document.createElement('span');
                         s1.textContent = (a.name || 'Estudiante') + (isFastestCorrect ? ' 🏆' : '');
                         const s2 = document.createElement('span');
-                        s2.textContent = (a.response_time_ms/1000).toFixed(2) + 's ' + (a.is_correct ? '✓' : '✗');
+                        const timeSec = (a.response_time_ms != null) ? (a.response_time_ms / 1000).toFixed(2) + 's' : '—';
+                        s2.textContent = timeSec + ' ' + (a.is_correct ? '✓' : '✗');
                         div.appendChild(s1);
                         div.appendChild(s2);
                         attemptsList.appendChild(div);
                     });
-                    const noWinnerBox = document.getElementById('ff-no-winner-box');
-                    const waitingBox = document.getElementById('ff-waiting-box');
-                    if (correct.length > 0 && winnerBox && winnerName && winnerPlayerId) {
-                        winnerBox.classList.remove('hidden');
-                        winnerName.textContent = correct[0].name || 'Estudiante';
-                        winnerPlayerId.value = String(correct[0].player_id);
-                        if (noWinnerBox) noWinnerBox.classList.add('hidden');
-                        if (waitingBox) waitingBox.classList.add('hidden');
-                    } else if (data.fastest_finger_attempts.length > 0 && noWinnerBox) {
-                        noWinnerBox.classList.remove('hidden');
-                        if (winnerBox) winnerBox.classList.add('hidden');
-                        if (waitingBox) waitingBox.classList.add('hidden');
-                    } else if (waitingBox) {
-                        waitingBox.classList.remove('hidden');
-                    }
+                }
+                const noWinnerBox = document.getElementById('ff-no-winner-box');
+                const waitingBox = document.getElementById('ff-waiting-box');
+                const roundIdInput = document.getElementById('ff-winner-round-id') as HTMLInputElement | null;
+                if (correct.length > 0 && winnerBox && winnerName && winnerPlayerId) {
+                    winnerBox.classList.remove('hidden');
+                    winnerName.textContent = correct[0].name || 'Estudiante';
+                    if (winnerTime) winnerTime.textContent = 'Tiempo: ' + (correct[0].response_time_ms != null ? (correct[0].response_time_ms / 1000).toFixed(2) + 's' : '—');
+                    winnerPlayerId.value = String(correct[0].player_id);
+                    if (roundIdInput) roundIdInput.value = String(roundId || round?.id || '');
+                    if (noWinnerBox) noWinnerBox.classList.add('hidden');
+                    if (waitingBox) waitingBox.classList.add('hidden');
+                } else if (data.fastest_finger_attempts.length > 0 && noWinnerBox) {
+                    noWinnerBox.classList.remove('hidden');
+                    if (winnerBox) winnerBox.classList.add('hidden');
+                    if (waitingBox) waitingBox.classList.add('hidden');
+                } else if (waitingBox) {
+                    waitingBox.classList.remove('hidden');
                 }
             }
         } catch (_) {}
@@ -726,45 +807,55 @@ if (confirmResult?.data?.clasico_round_id) {
         });
     });
 
-    // Botón Confirmar ganador → Silla Caliente (llama API y redirige)
-    document.getElementById('ff-confirm-winner-btn')?.addEventListener('click', async function() {
-        if (!confirm('¿Confirmar ganador?')) return;
-        const roundId = (document.getElementById('ff-winner-round-id') as HTMLInputElement)?.value;
-        const playerId = (document.getElementById('ff-winner-player-id') as HTMLInputElement)?.value;
+    // Botón Confirmar ganador → Silla Caliente (delegación para que siempre funcione)
+    document.body.addEventListener('click', async function(ev) {
+        const btn = (ev.target as Element)?.id === 'ff-confirm-winner-btn' ? (ev.target as HTMLButtonElement) : (ev.target as Element)?.closest('#ff-confirm-winner-btn') as HTMLButtonElement | null;
+        if (!btn) return;
+        ev.preventDefault();
+        if (!confirm('¿Confirmar ganador y pasar a Silla Caliente?')) return;
+        const winnerBox = document.getElementById('ff-winner-box');
+        const roundInput = (winnerBox?.querySelector('input[id="ff-winner-round-id"]') || document.getElementById('ff-winner-round-id')) as HTMLInputElement | null;
+        const playerInput = (winnerBox?.querySelector('input[id="ff-winner-player-id"]') || document.getElementById('ff-winner-player-id')) as HTMLInputElement | null;
+        let roundId = roundInput?.value?.trim() || '';
+        const playerId = playerInput?.value?.trim() || '';
+        if (!roundId) {
+            const m = window.location.pathname.match(/\/control\/(\d+)/);
+            if (m) roundId = m[1];
+        }
         if (!roundId || !playerId) {
-            alert('No hay ganador seleccionado. Espera a que se muestren los resultados.');
+            alert('No hay ganador seleccionado. Comprueba que aparece el nombre del ganador arriba y que el cuadro "Ganador sugerido" está visible.');
             return;
         }
-        const btn = document.getElementById('ff-confirm-winner-btn');
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = 'Procesando...';
-        }
+        btn.disabled = true;
+        btn.textContent = 'Procesando...';
         try {
             const res = await fetch('/api/control/confirm-winner', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ round_id: roundId, player_id: playerId }),
+                body: JSON.stringify({ round_id: String(roundId), player_id: String(playerId) }),
                 credentials: 'same-origin'
             });
-            const data = await res.json();
-            if (data.clasico_round_id) {
+            let data: { clasico_round_id?: number; error?: string } = {};
+            try {
+                data = await res.json();
+            } catch (_) {
+                data = { error: 'Respuesta inválida del servidor' };
+            }
+            if (res.ok && data.clasico_round_id) {
                 window.location.href = `/dashboard/eventos/control/${data.clasico_round_id}`;
                 return;
             }
             alert(data.error || 'Error al confirmar ganador');
         } catch (e) {
-            alert('Error de conexión');
+            alert('Error de conexión. Intenta de nuevo.');
         } finally {
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = 'Confirmar ganador → Silla Caliente';
-            }
+            btn.disabled = false;
+            btn.textContent = 'Confirmar ganador → Silla Caliente';
         }
     });
 
-    sync();
-    setInterval(sync, 2000);
+    setTimeout(sync, 300);
+    setInterval(sync, 1500);
     if (document.getElementById('audience-votes-box') && !document.getElementById('audience-votes-box').classList.contains('hidden')) {
         fetchAudienceVotes();
         setInterval(fetchAudienceVotes, 3000);

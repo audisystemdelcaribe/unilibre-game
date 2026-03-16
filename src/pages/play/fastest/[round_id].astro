@@ -266,11 +266,11 @@ const submitError = Astro.url.searchParams.get('error');
                                         .then(function(status) {
                                             var msgEl = document.getElementById('ff-winner-msg');
                                             var linkEl = document.getElementById('ff-winner-link');
-                                            if (status.finished && msgEl && linkEl) {
+                                            if (status && status.finished && msgEl && linkEl) {
                                                 if (status.isWinner) {
                                                     msgEl.textContent = '¡Eres el ganador! Pasa a la Silla Caliente.';
-                                                    msgEl.className = 'text-success font-bold mt-4';
-                                                    linkEl.innerHTML = '<a href="/play/silla-caliente" class="btn btn-warning font-black">Entrar a Silla Caliente</a>';
+                                                    msgEl.className = 'text-success font-bold mt-4 text-lg';
+                                                    linkEl.innerHTML = '<a href="/play/silla-caliente" class="btn btn-warning btn-lg font-black text-zinc-900">Entrar a Silla Caliente</a>';
                                                     linkEl.classList.remove('hidden');
                                                 } else {
                                                     msgEl.textContent = 'Correcto, pero no fuiste el más rápido. El ganador pasará a Silla Caliente.';
@@ -278,9 +278,11 @@ const submitError = Astro.url.searchParams.get('error');
                                                     linkEl.innerHTML = '<p class="text-zinc-500 text-sm mt-2">Fin de tu participación.</p><a href="/play" class="btn btn-ghost mt-4">Volver al inicio</a>';
                                                     linkEl.classList.remove('hidden');
                                                 }
+                                            } else if (!status || !status.finished) {
+                                                setTimeout(pollWinner, 2000);
                                             }
-                                            if (!status.finished) setTimeout(pollWinner, 2000);
-                                        });
+                                        })
+                                        .catch(function() { setTimeout(pollWinner, 2000); });
                                 })();
                             }
                         } else if (data.error) {

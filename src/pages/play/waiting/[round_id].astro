@@ -1,6 +1,7 @@
 ---
 import PlayLayout from "../../../layouts/PlayLayout.astro";
 import { Icon } from 'astro-icon/components';
+import { supabaseAdmin } from "../../../lib/supabaseAdmin";
 
 const { round_id } = Astro.params;
 
@@ -25,8 +26,21 @@ if (error || !round || !player) return Astro.redirect("/play?error=sesion_invali
 const gameModeId = round.events?.game_mode_id;
 const isMenteRapida = gameModeId === 3;
 
-// Mente más Rápida terminada: redirigir a todos (el ganador entra por /play/silla-caliente)
+// Mente más Rápida terminada: el ganador va a Silla Caliente, el resto a fin_participacion
 if (isMenteRapida && round.status === 'finished') {
+    const seasonId = round.events?.season_id;
+    if (seasonId) {
+        const evt = round.events as { scope?: string; program_id?: number | null; faculty_id?: number | null };
+        let q = supabaseAdmin.from('events').select('id').eq('game_mode_id', 2).eq('season_id', seasonId);
+        if (evt?.scope === 'program' && evt?.program_id) q = q.eq('program_id', evt.program_id).eq('scope', 'program');
+        else if (evt?.scope === 'faculty' && evt?.faculty_id) q = q.eq('faculty_id', evt.faculty_id).eq('scope', 'faculty');
+        else q = q.eq('scope', evt?.scope || 'global');
+        const { data: clasicoEvt } = await q.limit(1).maybeSingle();
+        if (clasicoEvt) {
+            const { data: ac } = await supabaseAdmin.from('active_contestants').select('player_id').eq('event_id', clasicoEvt.id).maybeSingle();
+            if (ac?.player_id === player.id) return Astro.redirect("/play/silla-caliente");
+        }
+    }
     return Astro.redirect("/play?error=fin_participacion");
 }
 
@@ -177,6 +191,19 @@ const myGradient = gradients[player.id % gradients.length];
             if (!client) return;
             const { data } = await client.from('event_rounds').select('status').eq('id', roundId).maybeSingle();
             if (data?.status === 'active' || data?.status === 'fastest_finger') irAlJuego(data.status);
+            else if (data?.status === 'finished' && isFinalist) {
+                try {
+                    const r = await fetch('/api/fastest-winner-status?round_id=' + roundId, { credentials: 'same-origin' });
+                    const status = await r.json();
+                    if (status && status.finished && status.isWinner) {
+                        yaRedirigido = true;
+                        window.location.href = '/play/silla-caliente';
+                    } else if (status && status.finished) {
+                        yaRedirigido = true;
+                        window.location.href = '/play?error=fin_participacion';
+                    }
+                } catch (_) {}
+            }
         }
 
         function conectar() {
@@ -189,6 +216,7 @@ const myGradient = gradients[player.id % gradients.length];
                     (payload) => {
                         const s = payload.new?.status;
                         if (s === 'active' || s === 'fastest_finger') irAlJuego(s);
+                        else if (s === 'finished' && isFinalist) verificarStatus();
                     })
                 .subscribe();
 

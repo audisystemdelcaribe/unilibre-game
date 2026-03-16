@@ -110,36 +110,15 @@ export const GET: APIRoute = async ({ locals, url }) => {
         result.last_word_used = !!lw;
     }
 
-    // Conectados: game_sessions (round_id) + event_players (event_id + classroom_group_id)
+    // Conectados: SOLO quienes tienen sesión activa en ESTA ronda (entraron con el PIN de esta sala).
+    // No usar event_players del evento: incluiría a quien entró en otra ronda/canal anterior.
     const playerIds = new Set<number>();
-    const groupId = String(round.classroom_group_id ?? "").trim();
-
-    // 1. game_sessions: quienes tienen sesión activa en esta ronda
-    try {
-        const { data: sessions } = await supabaseAdmin
-            .from("game_sessions")
-            .select("player_id")
-            .eq("round_id", roundIdNum)
-            .eq("finished", false);
-        if (sessions) sessions.forEach((s) => s.player_id && playerIds.add(s.player_id));
-    } catch {
-        // Si game_sessions no tiene round_id o falla, usamos solo event_players
-    }
-
-    // 2. event_players: quienes se unieron al evento con este grupo
-    const { data: eventPlayers } = await supabaseAdmin
-        .from("event_players")
-        .select("player_id, classroom_group_id")
-        .eq("event_id", round.event_id);
-
-    if (eventPlayers) {
-        eventPlayers.forEach((ep) => {
-            const epGroup = String(ep.classroom_group_id ?? "").trim();
-            if (groupId ? epGroup === groupId : epGroup === "" || epGroup === groupId) {
-                if (ep.player_id) playerIds.add(ep.player_id);
-            }
-        });
-    }
+    const { data: sessions } = await supabaseAdmin
+        .from("game_sessions")
+        .select("player_id")
+        .eq("round_id", roundIdNum)
+        .eq("finished", false);
+    if (sessions) sessions.forEach((s) => s.player_id && playerIds.add(s.player_id));
 
     if (playerIds.size > 0) {
         const { data: players } = await supabaseAdmin

@@ -20,7 +20,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         .eq("auth_user_id", user.id)
         .single();
 
-    if (profile?.role !== "admin" && profile?.role !== "docente") {
+    if (profile?.role !== "admin" && profile?.role !== "docente" && profile?.role !== "preseleccion") {
         return new Response(JSON.stringify({ error: "Solo staff puede confirmar ganador" }), {
             status: 403,
             headers: { "Content-Type": "application/json" },
@@ -70,12 +70,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
         });
     }
 
-    const evt = round.events as {
+    // Supabase puede devolver la relación como objeto o como array
+    const rawEvents = round.events;
+    const evt = (Array.isArray(rawEvents) ? rawEvents[0] : rawEvents) as {
         season_id?: number;
         program_id?: number | null;
         faculty_id?: number | null;
         scope?: string;
-    };
+    } | null;
     const seasonId = evt?.season_id;
     if (!seasonId) {
         return new Response(JSON.stringify({ error: "No se pudo obtener la temporada del evento" }), {
